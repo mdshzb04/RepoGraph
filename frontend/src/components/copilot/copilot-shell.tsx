@@ -76,8 +76,16 @@ export function CopilotShell() {
       const data = await parseJsonResponse<{
         id: string;
         error?: string;
+        code?: string;
       } & RepoMeta>(res);
-      if (!res.ok) throw new Error(data.error ?? "Index failed");
+      if (!res.ok) {
+        if (data.code === "INTERNAL_SECRET_MISMATCH") {
+          throw new Error(
+            "Backend rejected the app proxy — set the same ENGINTEL_INTERNAL_SECRET in frontend and backend env, then restart both."
+          );
+        }
+        throw new Error(data.error ?? "Index failed");
+      }
       localStorage.setItem("copilot_repo_id", data.id);
       setActiveRepo(data);
       setIndexStep("Index complete · observability ready");

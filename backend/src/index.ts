@@ -131,7 +131,11 @@ app.use((req, res, next) => {
     return;
   }
   if (!trustedFrontendProxyOk(req)) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({
+      error:
+        "Unauthorized — frontend must send x-engintel-internal matching ENGINTEL_INTERNAL_SECRET",
+      code: "INTERNAL_SECRET_MISMATCH",
+    });
     return;
   }
   next();
