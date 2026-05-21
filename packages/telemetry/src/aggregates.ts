@@ -13,7 +13,9 @@ const startedAt = Date.now();
 
 let totalApiRequests = 0;
 let totalApiErrors = 0;
+let totalApiServerErrors = 0;
 const requestTimestamps: number[] = [];
+const recentOutcomes: { at: number; serverError: boolean }[] = [];
 const RATE_WINDOW_MS = 60_000;
 
 let totalIndexFiles = 0;
@@ -29,11 +31,17 @@ let totalTraceEvents = 0;
 
 export function recordApiAggregate(statusCode: number): void {
   totalApiRequests += 1;
+  const serverError = statusCode >= 500;
   if (statusCode >= 400) totalApiErrors += 1;
+  if (serverError) totalApiServerErrors += 1;
   const now = Date.now();
   requestTimestamps.push(now);
+  recentOutcomes.push({ at: now, serverError });
   while (requestTimestamps.length && now - requestTimestamps[0]! > RATE_WINDOW_MS) {
     requestTimestamps.shift();
+  }
+  while (recentOutcomes.length && now - recentOutcomes[0]!.at > RATE_WINDOW_MS) {
+    recentOutcomes.shift();
   }
 }
 
@@ -90,6 +98,7 @@ export type LiveTelemetrySnapshot = {
   api: {
     totalRequests: number;
     totalErrors: number;
+    totalServerErrors: number;
     errorRatePct: number;
     requestsPerMin: number;
     requestsPerSec: number;
@@ -140,8 +149,14 @@ export type RepoLiveSnapshot = {
 };
 
 function errorRatePct(): number {
+  const now = Date.now();
+  const recent = recentOutcomes.filter((o) => now - o.at <= RATE_WINDOW_MS);
+  if (recent.length) {
+    const errors = recent.filter((o) => o.serverError).length;
+    return Math.round((errors / recent.length) * 1000) / 10;
+  }
   if (totalApiRequests === 0) return 0;
-  return Math.round((totalApiErrors / totalApiRequests) * 1000) / 10;
+  return Math.round((totalApiServerErrors / totalApiRequests) * 1000) / 10;
 }
 
 function requestsPerMin(): number {
@@ -166,6 +181,7 @@ export function getLiveTelemetrySnapshot(): LiveTelemetrySnapshot {
     api: {
       totalRequests: totalApiRequests,
       totalErrors: totalApiErrors,
+      totalServerErrors: totalApiServerErrors,
       errorRatePct: errorRatePct(),
       requestsPerMin: requestsPerMin(),
       requestsPerSec: requestsPerSec(),

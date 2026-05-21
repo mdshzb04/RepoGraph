@@ -257,6 +257,7 @@ export type LiveTelemetryPayload = {
   api: {
     totalRequests: number;
     totalErrors: number;
+    totalServerErrors?: number;
     errorRatePct: number;
     requestsPerMin: number;
     requestsPerSec: number;

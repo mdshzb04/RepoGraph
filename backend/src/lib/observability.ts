@@ -107,7 +107,7 @@ function buildBackendHealth(live: RepoLiveSnapshot): BackendHealth {
     {
       name: "API",
       status: live.api.totalRequests === 0 ? "idle" : live.api.errorRatePct > 10 ? "down" : "up",
-      detail: `${live.api.requestsPerMin}/min · ${live.api.totalRequests} total · ${live.api.errorRatePct}% errors`,
+      detail: `${live.api.requestsPerMin}/min · ${live.api.totalRequests} total · ${live.api.errorRatePct}% server errors (60s)`,
     },
   ];
   if (live.vectorSearch) {

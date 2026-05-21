@@ -38,7 +38,6 @@ export function CopilotShell() {
   const [panel, setPanel] = useState<Panel>("chat");
   const [indexError, setIndexError] = useState<string | null>(null);
   const [indexStep, setIndexStep] = useState("");
-  const [workspace, setWorkspace] = useState("personal");
 
   const loadRepo = useCallback(async (id: string) => {
     const res = await fetch(`/api/repos/${id}`);
@@ -136,15 +135,7 @@ export function CopilotShell() {
         <div className="border-b border-border/40 px-5 py-3 bg-muted/10">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Users className="size-3" /> Workspace</span>
-            <select 
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
-              className="bg-transparent text-xs font-medium focus:outline-none border-none cursor-pointer text-foreground"
-            >
-              <option value="personal" className="text-black dark:text-white">Personal</option>
-              <option value="team-alpha" className="text-black dark:text-white">Team Alpha</option>
-              <option value="org-acme" className="text-black dark:text-white">Acme Corp</option>
-            </select>
+            <span className="text-xs font-medium text-foreground">Personal</span>
           </div>
         </div>
 

@@ -12,7 +12,7 @@ export function MetricsOverview({ data }: { data: ObservabilityData }) {
     cards.push({
       label: "Request rate",
       value: `${live.api.requestsPerMin}/min`,
-      sub: `${live.api.totalRequests} total · ${live.api.errorRatePct}% errors`,
+      sub: `${live.api.totalRequests} total · ${live.api.errorRatePct}% server errors`,
     });
   }
 
