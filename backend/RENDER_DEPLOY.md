@@ -8,10 +8,14 @@ This repo is a **monorepo**: `backend` depends on workspace package `@engintel/t
 
 - **Runtime:** Node  
 - **Root Directory:** *(leave empty = repo root)*  
-- **Build command:**  
+- **Build command** *(runs once, then exits — this is normal):*  
   `npm ci && npm run render:backend:build`  
-- **Start command:**  
+- **Start command** *(must be separate — keeps the server alive):*  
   `npm run render:backend:start`
+
+Do **not** put the build command in the Start field. After build you should see the shell return / deploy move to "Starting"; the API stays up only from the start command.
+
+Or import [`render.yaml`](../render.yaml) at the repo root for these defaults.
 
 Optional: Environment → add **NODE_VERSION** = `20`.
 

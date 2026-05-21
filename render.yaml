@@ -1,0 +1,12 @@
+# Render Blueprint — backend API only (monorepo root).
+# Build exits when done (normal). Start keeps the server running.
+services:
+  - type: web
+    name: engintel-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run render:backend:build
+    startCommand: npm run render:backend:start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
