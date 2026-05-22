@@ -4,14 +4,9 @@ import { GithubSignInButton } from "@/components/auth/github-sign-in-button";
 export function AuthForm({ githubOauthEnabled = false }: { githubOauthEnabled?: boolean }) {
   return (
     <div className="auth-page">
-      <button
-        type="button"
-        className="auth-brand"
-        onClick={() => window.location.reload()}
-        aria-label="Reload page"
-      >
+      <div className="auth-brand" aria-hidden>
         <DefiLogo size={52} />
-      </button>
+      </div>
 
       <div className="auth-glow auth-glow--primary" aria-hidden />
       <div className="auth-glow auth-glow--secondary" aria-hidden />
