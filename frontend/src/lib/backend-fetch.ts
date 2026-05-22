@@ -10,6 +10,15 @@ export async function fetchBackend(
   init?: RequestInit
 ): Promise<Response> {
   const base = getBackendUrl().replace(/\/$/, "");
+  if (
+    process.env.VERCEL &&
+    (!process.env.BACKEND_URL || base.includes("localhost"))
+  ) {
+    return Response.json(
+      { error: "Set BACKEND_URL in Vercel to your hosted API (e.g. Render/Railway URL)." },
+      { status: 503 }
+    );
+  }
   const p = path.startsWith("/") ? path : `/${path}`;
   const url = `${base}${p}`;
   const forwarded = await buildBackendAuthHeaders(request);

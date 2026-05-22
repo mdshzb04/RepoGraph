@@ -67,7 +67,7 @@ export function CopilotShell() {
     }, 2200);
 
     try {
-      const res = await fetch("/api/repos/index", {
+      const res = await fetch("/api/repos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: repoInput.trim() }),

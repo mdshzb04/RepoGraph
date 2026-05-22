@@ -4,7 +4,9 @@ export async function parseJsonResponse<T>(res: Response): Promise<T> {
     throw new Error(
       res.status === 502 || res.status === 504
         ? "Backend timed out or is offline. Run: cd backend && npm run dev"
-        : `Empty response from server (${res.status}). Is the backend running on port 8000?`
+        : res.status === 405
+          ? "API route error (405). Redeploy the frontend, or set BACKEND_URL on Vercel to your hosted API."
+          : `Backend unreachable (${res.status}). Set BACKEND_URL on Vercel to your API URL (not localhost:8000).`
     );
   }
   try {
