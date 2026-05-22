@@ -21,6 +21,7 @@
     "render:backend:start": "npm run start --prefix backend"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
     "@types/express": "^5.0.6",
     "concurrently": "^9.2.1"
   }
