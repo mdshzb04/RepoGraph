@@ -12,7 +12,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "build": "npm run build -w @engintel/telemetry && npm run build --prefix backend && npm run build --prefix frontend",
     "build:telemetry": "npm run build -w @engintel/telemetry",
-    "build:frontend": "npm run build --prefix frontend",
+    "build:frontend": "npm run build -w @engintel/telemetry && npm run build --prefix frontend",
     "build:backend": "npm run build --prefix backend",
     "start": "concurrently -k -n frontend,backend -c cyan,magenta \"npm run start --prefix frontend\" \"npm run start --prefix backend\"",
     "start:frontend": "npm run start --prefix frontend",
@@ -20,8 +20,10 @@
     "render:backend:build": "npm run build -w @engintel/telemetry && npm run build --prefix backend",
     "render:backend:start": "npm run start --prefix backend"
   },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.3.0"
+  },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.0",
     "@types/express": "^5.0.6",
     "concurrently": "^9.2.1"
   }

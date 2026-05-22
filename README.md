@@ -56,9 +56,10 @@ npm run dev
 
 ### Frontend (Vercel)
 
-1. Import `frontend/` as a Next.js project.
-2. Set env from `frontend/.env.example`, especially `BACKEND_URL` (your API URL).
-3. Build: `npm run build:frontend` (from repo root).
+1. Import the **repository root** (not `frontend/` alone) so workspace package `@engintel/telemetry` resolves.
+2. Leave **Root Directory** empty (or `.`). `vercel.json` sets install/build for the monorepo.
+3. Set env from `frontend/.env.example`, especially `BACKEND_URL` (your API URL).
+4. Do **not** override install/build with a second `npm ci` in the build step — that can omit devDependencies and break PostCSS.
 
 ### Backend (Railway / Render)
 
