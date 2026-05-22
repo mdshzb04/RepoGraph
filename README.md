@@ -59,7 +59,8 @@ npm run dev
 1. Import the **repository root** (not `frontend/` alone) so workspace package `@engintel/telemetry` resolves.
 2. Leave **Root Directory** empty (or `.`). `vercel.json` sets install/build for the monorepo.
 3. Set env from `frontend/.env.example`, especially `BACKEND_URL` (your API URL).
-4. Do **not** override install/build with a second `npm ci` in the build step — that can omit devDependencies and break PostCSS.
+4. **GitHub OAuth:** GitHub App callback `https://repograph.shazeb.site/api/auth/callback/github`. Vercel env: `AUTH_URL=https://repograph.shazeb.site`, `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` (or `NEXTAUTH_*` / `GITHUB_*` aliases).
+5. Do **not** override install/build with a second `npm ci` in the build step — that can omit devDependencies and break PostCSS.
 
 ### Backend (Railway / Render)
 

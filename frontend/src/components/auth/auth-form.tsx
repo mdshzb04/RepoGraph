@@ -1,7 +1,18 @@
 import { DefiLogo } from "@/components/brand/logo";
 import { GithubSignInButton } from "@/components/auth/github-sign-in-button";
+import { PRODUCTION_SITE_URL, GITHUB_OAUTH_CALLBACK_PATH } from "@/lib/auth-config";
 
-export function AuthForm({ githubOauthEnabled = false }: { githubOauthEnabled?: boolean }) {
+type AuthFormProps = {
+  githubOauthEnabled?: boolean;
+  authError?: string;
+  configWarnings?: string[];
+};
+
+export function AuthForm({
+  githubOauthEnabled = false,
+  authError,
+  configWarnings = [],
+}: AuthFormProps) {
   return (
     <div className="auth-page">
       <div className="auth-brand" aria-hidden>
@@ -22,11 +33,26 @@ export function AuthForm({ githubOauthEnabled = false }: { githubOauthEnabled?: 
             </p>
           </header>
 
+          {authError && (
+            <p className="auth-error" role="alert">
+              {authError}
+            </p>
+          )}
+
+          {configWarnings.length > 0 && (
+            <p className="auth-error text-sm" role="status">
+              {configWarnings[0]}
+            </p>
+          )}
+
           {githubOauthEnabled ? (
             <GithubSignInButton />
           ) : (
             <p className="auth-error" role="alert">
-              GitHub sign-in is not configured. Set AUTH_GITHUB_ID and AUTH_GITHUB_SECRET.
+              GitHub sign-in is not configured. In Vercel set AUTH_GITHUB_ID,
+              AUTH_GITHUB_SECRET, AUTH_SECRET, and AUTH_URL={PRODUCTION_SITE_URL}.
+              GitHub callback: {PRODUCTION_SITE_URL}
+              {GITHUB_OAUTH_CALLBACK_PATH}
             </p>
           )}
         </div>
