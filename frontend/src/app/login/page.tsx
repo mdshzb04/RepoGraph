@@ -1,8 +1,8 @@
 import { AuthForm } from "@/components/auth/auth-form";
 
 export const metadata = {
-  title: "Sign In",
-  description: "Sign in to AI GitHub Engineering Copilot.",
+  title: "Login",
+  description: "Continue with GitHub to use AI GitHub Engineering Copilot.",
 };
 
 function isGithubOauthEnabled(): boolean {
