@@ -92,6 +92,20 @@ Check: `GET /health` or `GET /api/telemetry/status`.
 - `GET /health` — API up
 - Index a public repo (e.g. `vercel/next.js`) in the UI to verify GitHub + OpenAI
 
+<img width="836" height="520" alt="image" src="https://github.com/user-attachments/assets/161856f1-1056-4fb6-88ad-9dd69a8b89de" />
+
+
+
+https://github.com/user-attachments/assets/bdcf5571-061a-4450-a6b8-ae9ded94e52d
+
+
+
+
+
+
+
+
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -99,6 +113,7 @@ Check: `GET /health` or `GET /api/telemetry/status`.
 | Backend offline in UI | Set `BACKEND_URL` in frontend env; check `CORS_ORIGINS` on API |
 | GitHub rate limit | Add `GITHUB_TOKEN` to `backend/.env`, restart API, re-index |
 | Empty architecture | Wait for indexing to finish, then open Architecture tab |
+
 
 ## License
 
