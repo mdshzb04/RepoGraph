@@ -27,7 +27,12 @@ export async function withTraceplane<T>(
   if (!enabled) {
     throw new Error("Traceplane is not initialized");
   }
-  const { result } = await trace(opts, fn);
+  const { result, ingest } = await trace(opts, fn);
+  const executionId =
+    typeof ingest.execution_id === "string" ? ingest.execution_id : "unknown";
+  console.log(
+    `[traceplane] trace sent · agent=${opts.agent} execution_id=${executionId}`
+  );
   return result;
 }
 
@@ -47,11 +52,68 @@ export async function flushTraceRun(
     if (error) {
       run.error(error instanceof Error ? error.message : String(error));
     }
-    await run.flush();
+    const ingest = await run.flush();
+    const executionId =
+      typeof ingest.execution_id === "string" ? ingest.execution_id : "unknown";
+    console.log(`[traceplane] trace flushed · execution_id=${executionId}`);
   } catch (flushErr) {
     console.warn(
       "[traceplane] failed to flush trace:",
       flushErr instanceof Error ? flushErr.message : flushErr
+    );
+  }
+}
+
+export async function recordIndexJobTrace(params: {
+  fullName: string;
+  fileCount: number;
+  chunkCount: number;
+  durationMs: number;
+  healthScore: number;
+  llmSummaryUsed: boolean;
+  modelId: string;
+  llmTokens?: number;
+}): Promise<void> {
+  if (!enabled) return;
+  try {
+    await withTraceplane(
+      {
+        agent: "repograph-index",
+        model: params.modelId,
+        provider: "openai",
+        framework: "ai-sdk",
+        environment: process.env.NODE_ENV ?? "development",
+        tags: [params.fullName],
+      },
+      async (run) => {
+        run.setInput(`index ${params.fullName}`);
+        run.setOutput(
+          `ready · ${params.fileCount} files · ${params.chunkCount} chunks · health ${params.healthScore}/100`
+        );
+        run.toolCall(
+          "index_repository",
+          {
+            repo: params.fullName,
+            files: params.fileCount,
+            chunks: params.chunkCount,
+            llm_summary: params.llmSummaryUsed,
+          },
+          { latencyMs: params.durationMs }
+        );
+        if (params.llmSummaryUsed && params.llmTokens && params.llmTokens > 0) {
+          run.llmCall({
+            model: params.modelId,
+            inputTokens: params.llmTokens,
+            outputTokens: 0,
+          });
+        }
+        return null;
+      }
+    );
+  } catch (err) {
+    console.warn(
+      "[traceplane] failed to record index job:",
+      err instanceof Error ? err.message : err
     );
   }
 }

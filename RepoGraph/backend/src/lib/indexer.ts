@@ -20,7 +20,7 @@ import {
 } from "./architecture-context";
 import { flushTelemetry, recordOpenAIUsage, recordRepoIndex } from "@engintel/telemetry";
 import { pushOtelEvent } from "./telemetry-stream";
-import { isTraceplaneEnabled, withTraceplane } from "./traceplane";
+import { isTraceplaneEnabled, recordIndexJobTrace, withTraceplane } from "./traceplane";
 
 function buildManifests(files: { path: string; content: string }[]): ManifestMap {
   const out: ManifestMap = {};
@@ -120,6 +120,8 @@ ${chunks
   .join("\n\n")}`;
 
     let summaryPart = `${fullName} is a codebase with ${files.length} indexed source files across ${new Set(files.map((f) => f.path.split("/")[0])).size} top-level modules.`;
+    let llmSummaryUsed = false;
+    let llmTokens = 0;
     try {
       logStep(activityLog, "generating project summary via LLM", id);
       const generateSummary = async () => {
@@ -132,10 +134,13 @@ ${chunks
         return { text, usage };
       };
 
-      const { text, usage } = isTraceplaneEnabled()
-        ? await withTraceplane(
+      let text: string;
+      let usage: Awaited<ReturnType<typeof generateText>>["usage"];
+      if (isTraceplaneEnabled()) {
+        try {
+          ({ text, usage } = await withTraceplane(
             {
-              agent: "repograph-index",
+              agent: "repograph-index-llm",
               model: modelId,
               provider: "openai",
               framework: "ai-sdk",
@@ -153,17 +158,27 @@ ${chunks
               });
               return result;
             }
-          )
-        : await generateSummary();
+          ));
+        } catch (traceErr) {
+          console.warn(
+            "[traceplane] LLM summary trace failed, continuing:",
+            traceErr instanceof Error ? traceErr.message : traceErr
+          );
+          ({ text, usage } = await generateSummary());
+        }
+      } else {
+        ({ text, usage } = await generateSummary());
+      }
 
       summaryPart = sanitizeSummary(text) || summaryPart;
-      const tokens = usage?.totalTokens ?? 0;
-      if (tokens > 0) {
-        recordOpenAIUsage(tokens, "index_summary", modelId, id);
+      llmSummaryUsed = true;
+      llmTokens = usage?.totalTokens ?? 0;
+      if (llmTokens > 0) {
+        recordOpenAIUsage(llmTokens, "index_summary", modelId, id);
         pushOtelEvent({
           kind: "cost",
           name: "engintel.openai.tokens",
-          value: tokens,
+          value: llmTokens,
           unit: "tokens",
           attrs: { repo_id: id, operation: "index_summary", model: modelId },
         });
@@ -258,6 +273,16 @@ ${chunks
       attrs: { repo_id: id, files: String(files.length), chunks: String(chunks.length) },
     });
     await flushTelemetry();
+    await recordIndexJobTrace({
+      fullName,
+      fileCount: files.length,
+      chunkCount: chunks.length,
+      durationMs: indexingDurationMs,
+      healthScore: healthScore.overall,
+      llmSummaryUsed,
+      modelId,
+      llmTokens,
+    });
     await saveRepo(ready);
     return ready;
   } catch (err) {
