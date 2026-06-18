@@ -1,0 +1,39 @@
+{
+  "name": "@engintel/telemetry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight OpenTelemetry metrics for Grafana Cloud",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./grafana-embed": {
+      "types": "./dist/grafana-embed.d.ts",
+      "default": "./dist/grafana-embed.js"
+    },
+    "./grafana-public": {
+      "types": "./dist/grafana-public.d.ts",
+      "default": "./dist/grafana-public.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.203.0",
+    "@opentelemetry/resources": "^2.0.1",
+    "@opentelemetry/sdk-metrics": "^2.0.1",
+    "@opentelemetry/semantic-conventions": "^1.34.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
