@@ -10,3 +10,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
+      # Set in Render dashboard (Environment tab) — required for Traceplane observability:
+      # TRACEPLANE_API_KEY
+      # TRACEPLANE_BASE_URL=https://traceplane.shazeb.site/api/v1

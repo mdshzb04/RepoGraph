@@ -20,6 +20,7 @@ import {
 } from "./architecture-context";
 import { flushTelemetry, recordOpenAIUsage, recordRepoIndex } from "@engintel/telemetry";
 import { pushOtelEvent } from "./telemetry-stream";
+import { isTraceplaneEnabled, recordIndexJobTrace, withTraceplane } from "./traceplane";
 
 function buildManifests(files: { path: string; content: string }[]): ManifestMap {
   const out: ManifestMap = {};
@@ -108,15 +109,7 @@ export async function indexRepository(
 
     const treePreview = files.map((f) => f.path).slice(0, 40).join("\n");
     const modelId = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-
-    let summaryPart = `${fullName} is a codebase with ${files.length} indexed source files across ${new Set(files.map((f) => f.path.split("/")[0])).size} top-level modules.`;
-    try {
-      logStep(activityLog, "generating project summary via LLM", id);
-      const { text, usage } = await generateText({
-        model: openai(modelId),
-        system:
-          "Write only a plain 3-4 sentence project summary for engineers. No markdown headings, no code fences, no Mermaid, no JSON.",
-        prompt: `Repository: ${fullName}
+    const summaryPrompt = `Repository: ${fullName}
 Files (${files.length}):
 ${treePreview}
 
@@ -124,16 +117,68 @@ Snippets:
 ${chunks
   .slice(0, 6)
   .map((c) => `[${c.path}]\n${c.content.slice(0, 300)}`)
-  .join("\n\n")}`,
-      });
+  .join("\n\n")}`;
+
+    let summaryPart = `${fullName} is a codebase with ${files.length} indexed source files across ${new Set(files.map((f) => f.path.split("/")[0])).size} top-level modules.`;
+    let llmSummaryUsed = false;
+    let llmTokens = 0;
+    try {
+      logStep(activityLog, "generating project summary via LLM", id);
+      const generateSummary = async () => {
+        const { text, usage } = await generateText({
+          model: openai(modelId),
+          system:
+            "Write only a plain 3-4 sentence project summary for engineers. No markdown headings, no code fences, no Mermaid, no JSON.",
+          prompt: summaryPrompt,
+        });
+        return { text, usage };
+      };
+
+      let text: string;
+      let usage: Awaited<ReturnType<typeof generateText>>["usage"];
+      if (isTraceplaneEnabled()) {
+        try {
+          ({ text, usage } = await withTraceplane(
+            {
+              agent: "repograph-index-llm",
+              model: modelId,
+              provider: "openai",
+              framework: "ai-sdk",
+              environment: process.env.NODE_ENV ?? "development",
+              tags: [`repo:${id}`, fullName],
+            },
+            async (run) => {
+              run.setInput(summaryPrompt);
+              const result = await generateSummary();
+              run.setOutput(result.text);
+              run.llmCall({
+                model: modelId,
+                inputTokens: result.usage?.inputTokens ?? 0,
+                outputTokens: result.usage?.outputTokens ?? 0,
+              });
+              return result;
+            }
+          ));
+        } catch (traceErr) {
+          console.warn(
+            "[traceplane] LLM summary trace failed, continuing:",
+            traceErr instanceof Error ? traceErr.message : traceErr
+          );
+          ({ text, usage } = await generateSummary());
+        }
+      } else {
+        ({ text, usage } = await generateSummary());
+      }
+
       summaryPart = sanitizeSummary(text) || summaryPart;
-      const tokens = usage?.totalTokens ?? 0;
-      if (tokens > 0) {
-        recordOpenAIUsage(tokens, "index_summary", modelId, id);
+      llmSummaryUsed = true;
+      llmTokens = usage?.totalTokens ?? 0;
+      if (llmTokens > 0) {
+        recordOpenAIUsage(llmTokens, "index_summary", modelId, id);
         pushOtelEvent({
           kind: "cost",
           name: "engintel.openai.tokens",
-          value: tokens,
+          value: llmTokens,
           unit: "tokens",
           attrs: { repo_id: id, operation: "index_summary", model: modelId },
         });
@@ -228,6 +273,16 @@ ${chunks
       attrs: { repo_id: id, files: String(files.length), chunks: String(chunks.length) },
     });
     await flushTelemetry();
+    await recordIndexJobTrace({
+      fullName,
+      fileCount: files.length,
+      chunkCount: chunks.length,
+      durationMs: indexingDurationMs,
+      healthScore: healthScore.overall,
+      llmSummaryUsed,
+      modelId,
+      llmTokens,
+    });
     await saveRepo(ready);
     return ready;
   } catch (err) {

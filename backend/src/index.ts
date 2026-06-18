@@ -49,9 +49,16 @@ import {
   exportIndexBaselineToOtel,
   getLiveTelemetrySnapshot,
 } from "@engintel/telemetry";
+import {
+  flushTraceRun,
+  initTraceplane,
+  isTraceplaneEnabled,
+  startTraceRun,
+} from "./lib/traceplane";
 
 dotenv.config();
 initTelemetry();
+const traceplaneReady = initTraceplane();
 setTraceRecorder((repoId, kind) => recordTraceEvent(repoId, kind));
 
 void listRepos().then((repos) => {
@@ -483,6 +490,19 @@ Be precise, production-focused, and concise.`;
 
   try {
     const modelId = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const traceRun = traceplaneReady
+      ? startTraceRun({
+          agent: "repograph-chat",
+          model: modelId,
+          provider: "openai",
+          framework: "ai-sdk",
+          environment: process.env.NODE_ENV ?? "development",
+          tags: repoId ? [`repo:${repoId}`] : [],
+        })
+      : null;
+    traceRun?.setInput(lastText);
+
+    const llmStarted = Date.now();
     const result = streamText({
       model: openai(modelId),
       system,
@@ -503,6 +523,24 @@ Be precise, production-focused, and concise.`;
       },
     });
     result.pipeUIMessageStreamToResponse(res);
+
+    if (traceRun) {
+      void (async () => {
+        try {
+          const [text, usage] = await Promise.all([result.text, result.usage]);
+          traceRun.setOutput(text);
+          traceRun.llmCall({
+            model: modelId,
+            inputTokens: usage?.inputTokens ?? 0,
+            outputTokens: usage?.outputTokens ?? 0,
+            latencyMs: Date.now() - llmStarted,
+          });
+          await flushTraceRun(traceRun);
+        } catch (traceErr) {
+          await flushTraceRun(traceRun, traceErr);
+        }
+      })();
+    }
   } catch (error) {
     console.error("Chat error:", error);
     res.status(500).json({ error: "Failed to process chat request" });
@@ -514,6 +552,9 @@ const server = app.listen(port, host, () => {
   console.log(`Engineering Intelligence API at http://${host}:${port}`);
   console.log(
     `[telemetry] ${status.enabled ? "Grafana Cloud OTLP enabled" : "disabled (set GRAFANA_CLOUD_* to enable)"}`
+  );
+  console.log(
+    `[traceplane] ${isTraceplaneEnabled() ? "enabled" : "disabled (set TRACEPLANE_API_KEY to enable)"}`
   );
 });
 
