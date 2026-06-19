@@ -1,4 +1,5 @@
 import { DefiLogo } from "@/components/brand/logo";
+import { AuthBackground } from "@/components/auth/auth-background";
 import { GithubSignInButton } from "@/components/auth/github-sign-in-button";
 import { PRODUCTION_SITE_URL, GITHUB_OAUTH_CALLBACK_PATH } from "@/lib/auth-config";
 
@@ -6,12 +7,14 @@ type AuthFormProps = {
   githubOauthEnabled?: boolean;
   authError?: string;
   configWarnings?: string[];
+  callbackUrl?: string;
 };
 
 export function AuthForm({
   githubOauthEnabled = false,
   authError,
   configWarnings = [],
+  callbackUrl,
 }: AuthFormProps) {
   return (
     <div className="auth-page">
@@ -19,9 +22,7 @@ export function AuthForm({
         <DefiLogo size={52} />
       </div>
 
-      <div className="auth-glow auth-glow--primary" aria-hidden />
-      <div className="auth-glow auth-glow--secondary" aria-hidden />
-      <div className="auth-grid" aria-hidden />
+      <AuthBackground />
 
       <div className="auth-content">
         <div className="auth-card">
@@ -29,7 +30,8 @@ export function AuthForm({
             <p className="auth-eyebrow">AI GitHub Engineering Copilot</p>
             <h1 className="auth-title">Copilot for developers</h1>
             <p className="auth-description">
-              Chat with repos, map architecture, and search code semantically. Private repository support coming soon.
+              Chat with repos, map architecture, and search code semantically.
+              Private repositories are supported when you sign in with GitHub.
             </p>
           </header>
 
@@ -39,14 +41,24 @@ export function AuthForm({
             </p>
           )}
 
-          {configWarnings.length > 0 && (
+          {process.env.NODE_ENV === "production" && configWarnings.length > 0 && (
             <p className="auth-error text-sm" role="status">
               {configWarnings[0]}
             </p>
           )}
 
           {githubOauthEnabled ? (
-            <GithubSignInButton />
+            <>
+              <GithubSignInButton />
+              {process.env.NODE_ENV !== "production" && callbackUrl && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  GitHub app → add callback URL:{" "}
+                  <code className="rounded bg-muted/50 px-1 font-mono text-[10px]">
+                    {callbackUrl}
+                  </code>
+                </p>
+              )}
+            </>
           ) : (
             <p className="auth-error" role="alert">
               GitHub sign-in is not configured. In Vercel set AUTH_GITHUB_ID,
