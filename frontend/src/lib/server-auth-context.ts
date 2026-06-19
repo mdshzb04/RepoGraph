@@ -10,6 +10,16 @@ function getAuthSecret(): string {
   );
 }
 
+/** Auth.js uses __Secure- prefixed cookies on HTTPS sites. */
+function useSecureAuthCookies(): boolean {
+  const siteUrl =
+    process.env.AUTH_URL?.trim() ??
+    process.env.NEXTAUTH_URL?.trim() ??
+    "";
+  if (siteUrl.startsWith("https://")) return true;
+  return process.env.NODE_ENV === "production";
+}
+
 export type ServerAuthContext = {
   /** GitHub OAuth access token — never send to the browser. */
   githubAccessToken?: string;
@@ -30,7 +40,16 @@ export async function getServerAuthContext(request: Request): Promise<ServerAuth
 
   if (secret.length) {
     try {
-      const token = await getToken({ req: request, secret });
+      const secureCookie = useSecureAuthCookies();
+      let token = await getToken({ req: request, secret, secureCookie });
+      if (!token?.accessToken) {
+        const jar = await cookies();
+        token = await getToken({
+          req: { headers: { cookie: jar.toString() } },
+          secret,
+          secureCookie,
+        });
+      }
       if (token) {
         if (typeof token.accessToken === "string" && token.accessToken.length > 0) {
           githubAccessToken = token.accessToken;

@@ -22,6 +22,8 @@ import type { ArchitectureAnalysis } from "./architecture-analyzer";
 import type { ExcalidrawScene } from "./excalidraw-scene";
 import type { HealthScore } from "./health-score";
 import type { ObservabilitySnapshot } from "./observability";
+import type { ContributionCitySnapshot } from "./contribution-city";
+import type { GithubContribSnapshot } from "./github-contrib";
 import type { ManifestMap } from "./repo-scanner";
 import type { RepoAccessContext } from "./repo-access";
 import { canAccessRepo } from "./repo-access";
@@ -54,6 +56,8 @@ export type RepoKnowledge = {
   excalidrawScenes?: { system?: ExcalidrawScene };
   healthScore?: HealthScore;
   observability?: ObservabilitySnapshot;
+  contributionCity?: ContributionCitySnapshot;
+  contributionCityGithub?: GithubContribSnapshot;
   indexingDurationMs?: number;
   /** Set when indexed via authenticated BFF — used for per-user isolation. */
   indexedBySub?: string;

@@ -29,6 +29,11 @@ import { buildExcalidrawScene } from "./lib/excalidraw-scene";
 import { buildWorkflowDiagram } from "./lib/workflow-diagram";
 import { buildObservabilitySnapshot } from "./lib/observability";
 import {
+  buildContributionCityCache,
+  filterContributionCityByPeriod,
+  type ContributionCityPeriod,
+} from "./lib/contribution-city";
+import {
   canAccessRepo,
   parseRepoAccessFromRequest,
   timingSafeCompare,
@@ -350,6 +355,51 @@ app.get("/api/repos/:id/health", async (req, res) => {
     repo.architecture
   );
   res.json(score);
+});
+
+app.get("/api/repos/:id/contribution-city", async (req, res) => {
+  const repo = await getRepoAuthorized(req, req.params.id);
+  if (!repo) {
+    res.status(404).json({ error: "Repository not found" });
+    return;
+  }
+  if (repo.status !== "ready") {
+    res.status(404).json({ error: "Index repository first", code: "NOT_INDEXED" });
+    return;
+  }
+
+  const periodRaw = String(req.query.period ?? "all");
+  const period: ContributionCityPeriod =
+    periodRaw === "week" || periodRaw === "month" ? periodRaw : "all";
+
+  try {
+    let github = repo.contributionCityGithub ?? null;
+    if (!repo.contributionCity) {
+      const cache = await buildContributionCityCache(repo, readGithubUserToken(req));
+      github = cache.github;
+      const payload = filterContributionCityByPeriod(
+        cache.snapshot,
+        repo,
+        github,
+        period
+      );
+      res.json(payload);
+      return;
+    }
+
+    const payload = filterContributionCityByPeriod(
+      repo.contributionCity,
+      repo,
+      github,
+      period
+    );
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Contribution city failed",
+      code: "CITY_ERROR",
+    });
+  }
 });
 
 app.get("/api/repos/:id/observability", async (req, res) => {

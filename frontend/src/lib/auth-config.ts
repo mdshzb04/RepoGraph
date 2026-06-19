@@ -14,11 +14,13 @@ function vercelOrigin(): string | undefined {
 }
 
 export function resolveAuthEnv() {
+  const isProd = process.env.NODE_ENV === "production";
   const secret = trim(process.env.AUTH_SECRET) ?? trim(process.env.NEXTAUTH_SECRET);
   const siteUrl =
     trim(process.env.AUTH_URL) ??
     trim(process.env.NEXTAUTH_URL) ??
-    vercelOrigin();
+    vercelOrigin() ??
+    (isProd ? undefined : "http://localhost:3000");
   const githubId =
     trim(process.env.AUTH_GITHUB_ID) ?? trim(process.env.GITHUB_ID);
   const githubSecret =
@@ -38,11 +40,11 @@ export function getAuthConfigStatus() {
   if (!env.secret) {
     warnings.push("Set AUTH_SECRET (or NEXTAUTH_SECRET) in Vercel.");
   }
-  if (!env.siteUrl) {
+  if (!env.siteUrl && isProd) {
     warnings.push(
       `Set AUTH_URL (or NEXTAUTH_URL) to ${PRODUCTION_SITE_URL} in Vercel.`
     );
-  } else if (isProd && !env.siteUrl.includes("repograph.shazeb.site")) {
+  } else if (isProd && env.siteUrl && !env.siteUrl.includes("repograph.shazeb.site")) {
     warnings.push(
       `AUTH_URL is ${env.siteUrl}; expected ${PRODUCTION_SITE_URL} for production OAuth.`
     );
@@ -79,7 +81,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   OAuthCallback: "GitHub callback failed. Confirm callback URL and secrets match Vercel.",
   OAuthCreateAccount: "Could not create session from GitHub account.",
   CallbackRouteError: "Auth callback error. Check Vercel logs for [auth].",
-  Default: "Sign-in failed. Try again or use a different GitHub account.",
+  Default: "Sign-in failed. Try again with GitHub.",
 };
 
 export function getAuthErrorMessage(code: string | undefined): string {

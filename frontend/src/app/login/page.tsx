@@ -19,6 +19,7 @@ export default async function LoginPage({
       githubOauthEnabled={config.githubOauthEnabled}
       authError={error ? getAuthErrorMessage(error) : undefined}
       configWarnings={config.warnings}
+      callbackUrl={config.callbackUrl}
     />
   );
 }

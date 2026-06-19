@@ -161,6 +161,17 @@
   color: var(--auth-fg);
 }
 
+.auth-rays {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.auth-rays .side-rays-container {
+  z-index: 1;
+}
+
 .auth-glow {
   pointer-events: none;
   position: absolute;

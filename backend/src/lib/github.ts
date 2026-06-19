@@ -65,9 +65,12 @@ function githubError(
   const slug = `${owner}/${repo}`;
   if (status === 404) {
     if (auth === "none") {
-      return `Cannot access ${slug}. Repo may be private, renamed, or misspelled — sign in with GitHub, add GITHUB_TOKEN to backend/.env, or use a public repo (e.g. vercel/next.js).`;
+      return `Cannot access ${slug}. Sign in with GitHub to index private repositories, or verify the repo URL is correct.`;
     }
-    return `Repository ${slug} not found. Verify the GitHub URL and that your token can access it.`;
+    if (auth === "user") {
+      return `Repository ${slug} not found or your GitHub account cannot access it. Verify the URL, confirm the repo exists, and sign out then sign in again if you recently granted private repo access.`;
+    }
+    return `Repository ${slug} not found. Your server GITHUB_TOKEN may not have access to this private repo — sign in with GitHub or update the token scopes.`;
   }
   if (status === 403) {
     if (auth !== "none") {
