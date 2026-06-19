@@ -84,7 +84,16 @@ export type ContributionCitySnapshot = {
   githubAvailable: boolean;
 };
 
-const LANG_TOKENS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"] as const;
+const LANG_TOKENS = [
+  "city-hue-1",
+  "city-hue-2",
+  "city-hue-3",
+  "city-hue-4",
+  "city-hue-5",
+  "city-hue-6",
+  "city-hue-7",
+  "city-hue-8",
+] as const;
 
 function hashStr(s: string): number {
   let h = 0;
@@ -211,24 +220,80 @@ function inactiveModules(repo: RepoKnowledge, districts: CityDistrict[]): CityIn
   return out;
 }
 
-function syntheticGithub(repo: RepoKnowledge): GithubContribSnapshot {
-  const paths = repo.allPaths ?? repo.folderTree ?? [];
-  const dirs = new Set(paths.map((p) => (p.includes("/") ? p.split("/")[0] : "(root)")));
-  const pseudo = ["index-bot", "manifest-sync", "ci-runner"].filter(Boolean);
-  const contributors = pseudo.map((login, i) => ({
-    login,
-    avatarUrl: "",
-    totalContributions: Math.max(1, repo.chunkCount - i * 12),
-    weekCommits: Math.max(0, 3 - i),
-    monthCommits: Math.max(1, 8 - i * 2),
-  }));
+function syntheticGithub(
+  repo: RepoKnowledge,
+  profileLogin?: string
+): GithubContribSnapshot {
+  const intel = buildRepoIntel(repo);
+  const dirs = intel.activity.topDirs;
+  const ownerLogin = repo.fullName.split("/")[0] ?? "owner";
+
+  const fromDirs: GithubContribSnapshot["contributors"] = (dirs.length
+    ? dirs
+    : [{ dir: "(root)", files: repo.fileCount }]
+  )
+    .slice(0, 10)
+    .map((d, i) => ({
+      login: d.dir === "(root)" ? ownerLogin : d.dir.replace(/[^a-zA-Z0-9_-]/g, "-"),
+      avatarUrl: "",
+      totalContributions: Math.max(1, d.files),
+      weekCommits: Math.max(1, Math.ceil(d.files * 0.04)),
+      monthCommits: Math.max(2, Math.ceil(d.files * 0.12)),
+    }));
+
+  if (profileLogin && !fromDirs.some((c) => c.login === profileLogin)) {
+    fromDirs.unshift({
+      login: profileLogin,
+      avatarUrl: "",
+      totalContributions: Math.max(8, repo.chunkCount),
+      weekCommits: 3,
+      monthCommits: 10,
+    });
+  }
+
   return {
     meta: { stars: 0, forks: 0, openIssues: 0 },
-    contributors,
+    contributors: fromDirs,
     openPrs: 0,
     mergedPrsByLogin: {},
     reviewsByLogin: {},
+    profileLogin,
   };
+}
+
+function buildDistrictBuildings(
+  districts: CityDistrict[],
+  contributors: CityContributor[],
+  bounds: { width: number; depth: number }
+): CityBuilding[] {
+  if (districts.length <= 1) return [];
+  const cols = Math.ceil(Math.sqrt(districts.length));
+  const maxFiles = Math.max(...districts.map((d) => d.fileCount), 1);
+
+  return districts.map((d, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const norm = d.fileCount / maxFiles;
+    const height = 20 + Math.round(norm * 72);
+    const contributorId = `district:${d.id}`;
+    return {
+      id: `bd-${d.id}`,
+      contributorId,
+      districtId: d.id,
+      x: 56 + col * 88 + (hashStr(d.id) % 14),
+      z: bounds.depth - 72 - row * 56,
+      width: 22 + Math.min(14, Math.floor(d.fileCount / 4)),
+      depth: 20 + Math.min(10, Math.floor(d.fileCount / 6)),
+      height,
+      floors: Math.max(1, Math.round(height / 16)),
+      language: d.name,
+      colorToken: langToken(d.name),
+      windowGlow: d.inactive ? 0.2 : 0.65 + norm * 0.3,
+      hasCrane: !d.inactive && norm > 0.55,
+      maintenanceLevel: d.inactive ? 0.5 : 0.1,
+      abandoned: d.inactive,
+    };
+  });
 }
 
 export function buildContributionCity(
@@ -243,19 +308,28 @@ export function buildContributionCity(
   const graph = buildDependencyGraph(repo);
   const bounds = { width: 720, depth: 480 };
 
+  let ghContributors = gh.contributors;
+  if (ghContributors.length < 2) {
+    const synthetic = syntheticGithub(repo, gh.profileLogin);
+    const seen = new Set(ghContributors.map((c) => c.login));
+    for (const c of synthetic.contributors) {
+      if (!seen.has(c.login)) ghContributors.push(c);
+    }
+  }
+
   const maxMetric = Math.max(
     1,
-    ...gh.contributors.map((c) =>
+    ...ghContributors.map((c) =>
       metricForPeriod(c, period) +
         (gh.mergedPrsByLogin[c.login] ?? 0) * 2 +
         (gh.reviewsByLogin[c.login] ?? 0)
     )
   );
 
-  const openPrShare = Math.min(gh.openPrs, gh.contributors.length);
+  const openPrShare = Math.min(gh.openPrs, ghContributors.length);
   const issuePressure = Math.min(1, gh.meta.openIssues / 20);
 
-  const contributors: CityContributor[] = gh.contributors.map((c) => {
+  const contributors: CityContributor[] = ghContributors.map((c) => {
     const commits = metricForPeriod(c, period);
     const mergedPrs = gh.mergedPrsByLogin[c.login] ?? 0;
     const reviews = gh.reviewsByLogin[c.login] ?? 0;
@@ -277,7 +351,7 @@ export function buildContributionCity(
     };
   });
 
-  const buildings: CityBuilding[] = contributors.map((c, i) => {
+  const contributorBuildings: CityBuilding[] = contributors.map((c, i) => {
     const districtId = districtForContributor(c.login, districts);
     const cols = Math.ceil(Math.sqrt(contributors.length));
     const col = i % cols;
@@ -305,6 +379,28 @@ export function buildContributionCity(
       abandoned: c.heightScore < maxMetric * 0.08 && period !== "all",
     };
   });
+
+  const districtContributorRows: CityContributor[] = districts
+    .filter((d) => d.name !== "(root)" || districts.length === 1)
+    .map((d) => ({
+      id: `district:${d.id}`,
+      login: d.name,
+      avatarUrl: "",
+      commits: d.fileCount,
+      mergedPrs: 0,
+      reviews: 0,
+      heightScore: d.fileCount,
+      primaryLanguage: d.name,
+      recentActivity: d.inactive ? 0.15 : 0.7,
+    }));
+
+  const allContributors = [...contributors, ...districtContributorRows];
+  const districtBuildings = buildDistrictBuildings(
+    districts,
+    allContributors,
+    bounds
+  );
+  const buildings = [...contributorBuildings, ...districtBuildings];
 
   const landmarks: CityLandmark[] = [
     {
@@ -335,7 +431,7 @@ export function buildContributionCity(
     buildings,
     roads: buildRoads(districts, graph, bounds),
     landmarks,
-    contributors,
+    contributors: allContributors,
     inactiveModules: inactiveModules(repo, districts),
     bounds,
     githubAvailable: Boolean(github),

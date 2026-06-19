@@ -8,12 +8,37 @@ import type {
   LayoutBuilding,
 } from "./types";
 
+const CITY_PALETTE = [
+  "#eab308",
+  "#60a5fa",
+  "#f472b6",
+  "#34d399",
+  "#a78bfa",
+  "#fb923c",
+  "#22d3ee",
+  "#f87171",
+] as const;
+
 function iso(x: number, z: number): { px: number; py: number } {
   return { px: x - z * 0.5, py: (x + z) * 0.28 };
 }
 
 function fillForToken(token: string): string {
-  return `var(--${token})`;
+  if (token.startsWith("city-hue-")) {
+    const idx = Number(token.replace("city-hue-", "")) - 1;
+    if (idx >= 0 && idx < CITY_PALETTE.length) return CITY_PALETTE[idx]!;
+  }
+  if (token.startsWith("chart-")) {
+    return `var(--${token})`;
+  }
+  const idx = Math.abs(hashToken(token)) % CITY_PALETTE.length;
+  return CITY_PALETTE[idx]!;
+}
+
+function hashToken(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
 }
 
 function BuildingShape({
@@ -35,7 +60,10 @@ function BuildingShape({
   const roof = b.abandoned ? "var(--muted)" : fill;
   const wall = b.abandoned
     ? "color-mix(in oklch, var(--muted) 70%, var(--background))"
-    : `color-mix(in oklch, ${fill} 75%, var(--background))`;
+    : `color-mix(in oklch, ${fill} 82%, #0a0a12)`;
+  const sideWall = b.abandoned
+    ? wall
+    : `color-mix(in oklch, ${fill} 62%, #050508)`;
 
   const front = `M ${px} ${py} L ${px + w * 0.5} ${py + w * 0.14} L ${px + w * 0.5} ${py - h + w * 0.14} L ${px} ${py - h} Z`;
   const side = `M ${px + w * 0.5} ${py + w * 0.14} L ${px + w * 0.5 + d * 0.5} ${py + w * 0.14 + d * 0.14} L ${px + w * 0.5 + d * 0.5} ${py - h + w * 0.14 + d * 0.14} L ${px + w * 0.5} ${py - h + w * 0.14} Z`;
@@ -55,9 +83,9 @@ function BuildingShape({
       role="button"
       aria-label={`${contributorLogin} building`}
     >
-      <path d={side} fill={wall} stroke="var(--border)" strokeWidth={0.6} />
-      <path d={front} fill={wall} stroke="var(--border)" strokeWidth={0.6} />
-      <path d={top} fill={roof} stroke="var(--border)" strokeWidth={0.5} opacity={b.abandoned ? 0.55 : 1} />
+      <path d={side} fill={sideWall} stroke="color-mix(in oklch, var(--border) 80%, transparent)" strokeWidth={0.6} />
+      <path d={front} fill={wall} stroke="color-mix(in oklch, var(--border) 80%, transparent)" strokeWidth={0.6} />
+      <path d={top} fill={roof} stroke="color-mix(in oklch, var(--border) 70%, transparent)" strokeWidth={0.5} opacity={b.abandoned ? 0.55 : 1} />
       {Array.from({ length: Math.min(b.floors, 6) }).map((_, fi) => {
         const wy = py - h + fi * (h / Math.max(b.floors, 1)) + 6;
         return (
@@ -68,11 +96,22 @@ function BuildingShape({
             width={Math.max(4, w * 0.22)}
             height={5}
             rx={1}
-            fill="var(--primary-foreground)"
+            fill={fill}
             opacity={glowOpacity}
           />
         );
       })}
+      <text
+        x={px + 2}
+        y={py + 10}
+        fontSize={7}
+        fontWeight={600}
+        fill="color-mix(in oklch, var(--foreground) 90%, transparent)"
+      >
+        {contributorLogin.length > 14
+          ? `${contributorLogin.slice(0, 12)}…`
+          : contributorLogin}
+      </text>
       {b.hasCrane && (
         <g transform={`translate(${px + w * 0.35}, ${py - h - 18})`}>
           <line x1={0} y1={0} x2={0} y2={22} stroke="var(--chart-4)" strokeWidth={2} />
@@ -120,6 +159,9 @@ function DistrictPads({ districts, bounds }: { districts: CityDistrict[]; bounds
         const { px, py } = iso(x, z);
         const w = bounds.width / cols - 16;
         const h = bounds.depth / Math.ceil(districts.length / cols) - 12;
+        const padFill = d.inactive
+          ? "var(--muted)"
+          : fillForToken(`city-hue-${(i % 8) + 1}`);
         return (
           <g key={d.id}>
             <rect
@@ -127,8 +169,8 @@ function DistrictPads({ districts, bounds }: { districts: CityDistrict[]; bounds
               y={py}
               width={w}
               height={h * 0.35}
-              fill={d.inactive ? "var(--muted)" : "var(--card)"}
-              opacity={d.inactive ? 0.25 : 0.35}
+              fill={padFill}
+              opacity={d.inactive ? 0.2 : 0.28}
               rx={4}
             />
             <text
@@ -177,14 +219,21 @@ export const CityRenderer = memo(function CityRenderer({
       aria-label="Contribution City isometric skyline"
     >
       <defs>
-        <linearGradient id="city-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--background)" />
-          <stop offset="100%" stopColor="color-mix(in oklch, var(--muted) 40%, var(--background))" />
+        <linearGradient id="city-sky" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#0c1222" />
+          <stop offset="45%" stopColor="#12101a" />
+          <stop offset="100%" stopColor="#1a1028" />
         </linearGradient>
+        <radialGradient id="city-glow" cx="85%" cy="8%" r="55%">
+          <stop offset="0%" stopColor="rgba(234, 179, 8, 0.18)" />
+          <stop offset="55%" stopColor="rgba(96, 165, 250, 0.08)" />
+          <stop offset="100%" stopColor="transparent" />
+        </radialGradient>
       </defs>
       <rect width={data.bounds.width} height={viewH} fill="url(#city-sky)" />
+      <rect width={data.bounds.width} height={viewH} fill="url(#city-glow)" />
       <DistrictPads districts={data.districts} bounds={data.bounds} />
-      {data.roads.map((road) => {
+      {data.roads.map((road, ri) => {
         const [a, b] = road.points;
         if (!a || !b) return null;
         const p1 = iso(a[0], a[1]);
@@ -196,10 +245,10 @@ export const CityRenderer = memo(function CityRenderer({
             y1={p1.py}
             x2={p2.px}
             y2={p2.py}
-            stroke="var(--border)"
-            strokeWidth={3}
-            strokeDasharray="6 4"
-            opacity={0.7}
+            stroke={fillForToken(`city-hue-${(ri % 8) + 1}`)}
+            strokeWidth={4}
+            strokeDasharray="8 5"
+            opacity={0.55}
           />
         );
       })}

@@ -5,7 +5,7 @@ import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { parseRepoInput } from "./lib/github";
 import { indexRepository } from "./lib/indexer";
-import { getRepo, listRepos, listReposForUser } from "./lib/knowledge";
+import { getRepo, listRepos, listReposForUser, saveRepo } from "./lib/knowledge";
 import {
   buildContextBlock,
   retrieveChunks,
@@ -377,6 +377,11 @@ app.get("/api/repos/:id/contribution-city", async (req, res) => {
     if (!repo.contributionCity) {
       const cache = await buildContributionCityCache(repo, readGithubUserToken(req));
       github = cache.github;
+      await saveRepo({
+        ...repo,
+        contributionCity: cache.snapshot,
+        contributionCityGithub: cache.github ?? undefined,
+      });
       const payload = filterContributionCityByPeriod(
         cache.snapshot,
         repo,

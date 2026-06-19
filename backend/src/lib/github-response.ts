@@ -26,20 +26,25 @@ export function isJsonContentType(contentType: string | null): boolean {
 
 export async function readGithubJson<T>(res: Response): Promise<T> {
   const contentType = res.headers.get("content-type");
-  if (contentType && !isJsonContentType(contentType)) {
-    throw new GithubApiError(
-      `GitHub response must be JSON (got ${contentType.split(";")[0]})`,
-      res.status || 502,
-      "GITHUB_INVALID_CONTENT_TYPE"
-    );
-  }
-
   const text = await res.text();
+
   if (isHtmlPayload(text)) {
     throw new GithubApiError(
       "GitHub returned an HTML page instead of JSON — sign in with GitHub or check GITHUB_TOKEN",
       res.status || 502,
       "GITHUB_HTML_RESPONSE"
+    );
+  }
+
+  const trimmed = text.trimStart();
+  const looksLikeJson =
+    trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed === "null";
+
+  if (contentType && !isJsonContentType(contentType) && !looksLikeJson) {
+    throw new GithubApiError(
+      `GitHub response must be JSON (got ${contentType.split(";")[0]})`,
+      res.status || 502,
+      "GITHUB_INVALID_CONTENT_TYPE"
     );
   }
 

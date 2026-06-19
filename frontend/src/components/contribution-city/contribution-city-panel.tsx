@@ -86,7 +86,7 @@ export function ContributionCityPanel({
     <PanelScroll className="flex min-h-0 flex-1 flex-col p-6">
       <SectionHeader
         title="Contribution City"
-        description="Isometric skyline from contributors, modules, dependencies, and GitHub signals — deterministic, sub-500ms render."
+        description="Isometric skyline from your GitHub profile, contributors, and repo modules — builds automatically when a repository is indexed."
       />
       {error && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
