@@ -5,7 +5,7 @@ import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { parseRepoInput } from "./lib/github";
 import { indexRepository } from "./lib/indexer";
-import { getRepo, listRepos, listReposForUser, saveRepo } from "./lib/knowledge";
+import { getRepo, listRepos, listReposForUser } from "./lib/knowledge";
 import {
   buildContextBlock,
   retrieveChunks,
@@ -28,11 +28,6 @@ import { buildDependencyGraph } from "./lib/dependency-graph";
 import { buildExcalidrawScene } from "./lib/excalidraw-scene";
 import { buildWorkflowDiagram } from "./lib/workflow-diagram";
 import { buildObservabilitySnapshot } from "./lib/observability";
-import {
-  buildContributionCityCache,
-  filterContributionCityByPeriod,
-  type ContributionCityPeriod,
-} from "./lib/contribution-city";
 import {
   canAccessRepo,
   parseRepoAccessFromRequest,
@@ -355,56 +350,6 @@ app.get("/api/repos/:id/health", async (req, res) => {
     repo.architecture
   );
   res.json(score);
-});
-
-app.get("/api/repos/:id/contribution-city", async (req, res) => {
-  const repo = await getRepoAuthorized(req, req.params.id);
-  if (!repo) {
-    res.status(404).json({ error: "Repository not found" });
-    return;
-  }
-  if (repo.status !== "ready") {
-    res.status(404).json({ error: "Index repository first", code: "NOT_INDEXED" });
-    return;
-  }
-
-  const periodRaw = String(req.query.period ?? "all");
-  const period: ContributionCityPeriod =
-    periodRaw === "week" || periodRaw === "month" ? periodRaw : "all";
-
-  try {
-    let github = repo.contributionCityGithub ?? null;
-    if (!repo.contributionCity) {
-      const cache = await buildContributionCityCache(repo, readGithubUserToken(req));
-      github = cache.github;
-      await saveRepo({
-        ...repo,
-        contributionCity: cache.snapshot,
-        contributionCityGithub: cache.github ?? undefined,
-      });
-      const payload = filterContributionCityByPeriod(
-        cache.snapshot,
-        repo,
-        github,
-        period
-      );
-      res.json(payload);
-      return;
-    }
-
-    const payload = filterContributionCityByPeriod(
-      repo.contributionCity,
-      repo,
-      github,
-      period
-    );
-    res.json(payload);
-  } catch (err) {
-    res.status(500).json({
-      error: err instanceof Error ? err.message : "Contribution city failed",
-      code: "CITY_ERROR",
-    });
-  }
 });
 
 app.get("/api/repos/:id/observability", async (req, res) => {

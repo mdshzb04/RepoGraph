@@ -30,8 +30,8 @@ export function AuthForm({
             <p className="auth-eyebrow">AI GitHub Engineering Copilot</p>
             <h1 className="auth-title">Copilot for developers</h1>
             <p className="auth-description">
-              Chat with repos, map architecture, and search code semantically.
-              Private repositories are supported when you sign in with GitHub.
+              Semantic search, architecture maps, and repo-aware chat — built for
+              how you actually ship code.
             </p>
           </header>
 

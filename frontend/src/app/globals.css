@@ -173,7 +173,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: var(--auth-bg);
+  background: radial-gradient(ellipse 120% 80% at 50% -20%, #0a1628 0%, #030508 55%, #000000 100%);
   color: var(--auth-fg);
 }
 
@@ -184,7 +184,17 @@
   pointer-events: none;
 }
 
-.auth-rays .side-rays-container {
+.auth-rays-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 45%, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.35) 100%);
+  pointer-events: none;
+}
+
+.auth-rays .light-rays-container {
   z-index: 1;
 }
 
@@ -244,15 +254,14 @@
 
 .auth-card {
   border-radius: 1.25rem;
-  border: 1px solid var(--auth-card-border);
-  background: var(--auth-card-bg);
+  border: 1px solid color-mix(in oklch, #00ffff 18%, transparent);
+  background: color-mix(in oklch, oklch(0.12 0.02 250) 78%, transparent);
   padding: 2rem 1.75rem;
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent),
-    0 1px 2px color-mix(in oklch, var(--auth-shadow) 25%, transparent),
-    0 24px 64px color-mix(in oklch, var(--auth-shadow) 55%, transparent),
-    0 0 80px color-mix(in oklch, var(--auth-glow) 6%, transparent);
-  backdrop-filter: blur(20px) saturate(1.2);
+    0 0 0 1px color-mix(in oklch, #00ffff 8%, transparent),
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 64px color-mix(in oklch, #00ffff 6%, transparent);
+  backdrop-filter: blur(24px) saturate(1.35);
   animation: auth-card-float 7s ease-in-out infinite;
 }
 
@@ -292,7 +301,7 @@
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--auth-description) 85%, transparent);
+  color: color-mix(in oklch, #00ffff 55%, var(--auth-description));
 }
 
 .auth-title {
@@ -538,8 +547,8 @@
   min-height: 3rem;
   padding: 0 1rem;
   border-radius: 9999px;
-  border: 1px solid color-mix(in oklch, var(--auth-card-border) 100%, transparent);
-  background: color-mix(in oklch, var(--auth-input-bg) 100%, transparent);
+  border: 1px solid color-mix(in oklch, #00ffff 22%, transparent);
+  background: color-mix(in oklch, oklch(0.1 0.02 250) 90%, transparent);
   font-size: 0.9375rem;
   font-weight: 500;
   color: var(--auth-fg);
@@ -551,8 +560,9 @@
 }
 
 .auth-github-btn:hover {
-  background: color-mix(in oklch, var(--auth-input-bg) 100%, var(--foreground) 5%);
-  border-color: color-mix(in oklch, var(--auth-card-border) 100%, var(--foreground) 10%);
+  background: color-mix(in oklch, oklch(0.14 0.03 250) 95%, transparent);
+  border-color: color-mix(in oklch, #00ffff 40%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, #00ffff 12%, transparent);
 }
 
 .auth-github-btn:focus-visible {

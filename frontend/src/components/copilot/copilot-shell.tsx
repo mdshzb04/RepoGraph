@@ -11,7 +11,6 @@ import {
   Rocket,
   Activity,
   Users,
-  Building2,
 } from "lucide-react";
 import { DefiLogo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -23,13 +22,12 @@ import { KnowledgePanel } from "./knowledge-panel";
 import { ArchitecturePanel } from "./architecture-panel";
 import { DeploymentsPanel } from "./deployments-panel";
 import { ObservabilityPanel } from "./observability-panel";
-import { ContributionCityPanel } from "@/components/contribution-city";
 import { HealthScoreRing } from "./ui/health-score-ring";
 import { parseJsonResponse } from "@/lib/api";
 import { LogoutModal } from "@/components/auth/logout-modal";
 import "@/app/copilot.css";
 
-type Panel = "chat" | "diagram" | "kb" | "deploy" | "obs" | "city";
+type Panel = "chat" | "diagram" | "kb" | "deploy" | "obs";
 
 export function CopilotShell() {
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -89,8 +87,8 @@ export function CopilotShell() {
       }
       localStorage.setItem("copilot_repo_id", data.id);
       setActiveRepo(data);
-      setIndexStep("Index complete · Contribution City ready");
-      setPanel("city");
+      setIndexStep("Index complete");
+      setPanel("chat");
     } catch (err) {
       setIndexError(
         err instanceof Error ? err.message : "Index failed"
@@ -107,7 +105,6 @@ export function CopilotShell() {
     { id: "kb" as const, label: "Knowledge", icon: Database },
     { id: "deploy" as const, label: "Deployments", icon: Rocket },
     { id: "obs" as const, label: "Observability", icon: Activity },
-    { id: "city" as const, label: "Contribution City", icon: Building2 },
   ];
 
   return (
@@ -284,9 +281,6 @@ export function CopilotShell() {
         )}
         {panel === "deploy" && <DeploymentsPanel repo={activeRepo} />}
         {panel === "obs" && <ObservabilityPanel repo={activeRepo} />}
-        {panel === "city" && (
-          <ContributionCityPanel repo={activeRepo} active={panel === "city"} />
-        )}
       </main>
       <LogoutModal open={logoutOpen} onClose={() => setLogoutOpen(false)} />
     </div>

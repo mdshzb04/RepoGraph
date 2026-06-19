@@ -21,7 +21,6 @@ import {
 import { flushTelemetry, recordOpenAIUsage, recordRepoIndex } from "@engintel/telemetry";
 import { pushOtelEvent } from "./telemetry-stream";
 import { isTraceplaneEnabled, recordIndexJobTrace, withTraceplane } from "./traceplane";
-import { buildContributionCityCache } from "./contribution-city";
 
 function buildManifests(files: { path: string; content: string }[]): ManifestMap {
   const out: ManifestMap = {};
@@ -285,36 +284,8 @@ ${chunks
       llmTokens,
     });
 
-    let contributionCity;
-    let contributionCityGithub;
-    try {
-      logStep(activityLog, "building contribution city skyline", id);
-      const cityCache = await buildContributionCityCache(
-        ready,
-        options?.githubUserToken
-      );
-      contributionCity = cityCache.snapshot;
-      contributionCityGithub = cityCache.github ?? undefined;
-      logStep(
-        activityLog,
-        `contribution city: ${cityCache.snapshot.buildings.length} buildings · github ${cityCache.github ? "live" : "heuristic"}`,
-        id
-      );
-    } catch (cityErr) {
-      console.warn("Contribution city skipped:", cityErr);
-      logStep(activityLog, "contribution city skipped — using index heuristics on first view", id);
-    }
-
-    await saveRepo({
-      ...ready,
-      ...(contributionCity ? { contributionCity } : {}),
-      ...(contributionCityGithub ? { contributionCityGithub } : {}),
-    });
-    return {
-      ...ready,
-      ...(contributionCity ? { contributionCity } : {}),
-      ...(contributionCityGithub ? { contributionCityGithub } : {}),
-    };
+    await saveRepo(ready);
+    return ready;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Indexing failed";
     recordRepoIndex(
