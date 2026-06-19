@@ -129,7 +129,9 @@ export function ArchitecturePanel({
         </div>
 
         <p className="text-[10px] text-muted-foreground">
-          Generated from indexed routes, imports, services, and manifests
+          Heuristic graph + Claude analysis
+          {data?.aiInsightsGeneratedAt &&
+            ` · AI insights ${new Date(data.aiInsightsGeneratedAt).toLocaleString()}`}
           {routeCount > 0 && ` · ${routeCount} routes`}
           {serviceCount > 0 && ` · ${serviceCount} services`}
         </p>
@@ -141,8 +143,21 @@ export function ArchitecturePanel({
         )}
 
         {layer === "workflow" && (
-          <LayerShell title="Workflow diagram" hint="Excalidraw · request lifecycle">
-            <WorkflowExcalidrawDiagram workflow={data?.workflow ?? null} />
+          <LayerShell
+            title="Workflow diagram"
+            hint={
+              data?.claudeWorkflowMermaid
+                ? "Claude-inferred lifecycle"
+                : "Excalidraw · request lifecycle"
+            }
+          >
+            {data?.claudeWorkflowMermaid ? (
+              <pre className="max-h-[min(480px,60vh)] overflow-auto rounded-lg border border-border/40 bg-muted/20 p-4 font-mono text-[11px] leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                {data.claudeWorkflowMermaid}
+              </pre>
+            ) : (
+              <WorkflowExcalidrawDiagram workflow={data?.workflow ?? null} />
+            )}
           </LayerShell>
         )}
 
@@ -153,9 +168,20 @@ export function ArchitecturePanel({
         )}
 
         {layer === "dependencies" && (
-          <LayerShell title="Service dependency map" hint="hover for metadata">
-            <DependencyExplorer graph={data?.dependencyGraph ?? null} />
-          </LayerShell>
+          <div className="space-y-4">
+            {data?.dependencyAnalysis && (
+              <LayerShell title="Claude dependency analysis" hint="deep architecture notes">
+                <div className="prose prose-invert max-w-none text-sm text-muted-foreground">
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+                    {data.dependencyAnalysis}
+                  </pre>
+                </div>
+              </LayerShell>
+            )}
+            <LayerShell title="Service dependency map" hint="hover for metadata">
+              <DependencyExplorer graph={data?.dependencyGraph ?? null} />
+            </LayerShell>
+          </div>
         )}
       </div>
     </PanelScroll>

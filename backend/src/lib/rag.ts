@@ -1,4 +1,6 @@
 import type { CodeChunk } from "./knowledge";
+import { embedQuery, cosineSimilarity } from "./ai/embeddings";
+import { openAIProvider } from "./ai/openai-provider";
 
 const CHUNK_SIZE = 900;
 const CHUNK_OVERLAP = 120;
@@ -40,7 +42,8 @@ export function chunkFiles(
   return chunks;
 }
 
-export function retrieveChunks(
+/** Keyword retrieval — fallback when embeddings are unavailable. */
+export function retrieveChunksKeyword(
   chunks: CodeChunk[],
   query: string,
   limit = 6
@@ -68,11 +71,54 @@ export function retrieveChunks(
     .map((s) => s.chunk);
 }
 
-export function retrieveChunksScored(
+/** Vector search when embeddings exist; otherwise keyword fallback. */
+export async function retrieveChunks(
+  chunks: CodeChunk[],
+  query: string,
+  limit = 6
+): Promise<CodeChunk[]> {
+  const hasVectors = chunks.some((c) => c.embedding?.length);
+  if (hasVectors && openAIProvider.isConfigured() && query.trim()) {
+    try {
+      const qEmb = await embedQuery(query);
+      return chunks
+        .filter((c) => c.embedding?.length)
+        .map((chunk) => ({
+          chunk,
+          score: cosineSimilarity(qEmb, chunk.embedding!),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((s) => s.chunk);
+    } catch {
+      /* keyword fallback */
+    }
+  }
+  return retrieveChunksKeyword(chunks, query, limit);
+}
+
+export async function retrieveChunksScored(
   chunks: CodeChunk[],
   query: string,
   limit = 8
-): { chunk: CodeChunk; score: number }[] {
+): Promise<{ chunk: CodeChunk; score: number }[]> {
+  const hasVectors = chunks.some((c) => c.embedding?.length);
+  if (hasVectors && openAIProvider.isConfigured() && query.trim()) {
+    try {
+      const qEmb = await embedQuery(query);
+      return chunks
+        .filter((c) => c.embedding?.length)
+        .map((chunk) => ({
+          chunk,
+          score: cosineSimilarity(qEmb, chunk.embedding!),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    } catch {
+      /* keyword fallback */
+    }
+  }
+
   const terms = query
     .toLowerCase()
     .split(/\W+/)

@@ -8,6 +8,8 @@ export type CodeChunk = {
   content: string;
   startLine: number;
   endLine: number;
+  /** OpenAI embedding vector (text-embedding-3-small, 1536 dims). */
+  embedding?: number[];
 };
 
 export type FileStat = {
@@ -22,6 +24,7 @@ import type { ArchitectureAnalysis } from "./architecture-analyzer";
 import type { ExcalidrawScene } from "./excalidraw-scene";
 import type { HealthScore } from "./health-score";
 import type { ObservabilitySnapshot } from "./observability";
+import type { RepoAiInsights } from "./ai/types";
 import type { ManifestMap } from "./repo-scanner";
 import type { RepoAccessContext } from "./repo-access";
 import { canAccessRepo } from "./repo-access";
@@ -54,6 +57,8 @@ export type RepoKnowledge = {
   excalidrawScenes?: { system?: ExcalidrawScene };
   healthScore?: HealthScore;
   observability?: ObservabilitySnapshot;
+  /** Claude-generated architecture, workflow, and dependency analysis. */
+  aiInsights?: RepoAiInsights;
   indexingDurationMs?: number;
   /** Set when indexed via authenticated BFF — used for per-user isolation. */
   indexedBySub?: string;

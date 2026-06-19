@@ -1,5 +1,3 @@
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { fetchRepoFiles } from "./github";
 import { analyzeArchitecture } from "./architecture-analyzer";
 import { analyzeDeployment } from "./deployment-analyzer";
@@ -16,11 +14,11 @@ import { buildFileStats, languageBreakdown } from "./repo-stats";
 import type { ManifestMap } from "./repo-scanner";
 import {
   buildMermaidFromArchitecture,
-  sanitizeSummary,
 } from "./architecture-context";
 import { flushTelemetry, recordOpenAIUsage, recordRepoIndex } from "@engintel/telemetry";
 import { pushOtelEvent } from "./telemetry-stream";
 import { isTraceplaneEnabled, recordIndexJobTrace, withTraceplane } from "./traceplane";
+import { aiProvider } from "./ai";
 
 function buildManifests(files: { path: string; content: string }[]): ManifestMap {
   const out: ManifestMap = {};
@@ -104,11 +102,32 @@ export async function indexRepository(
     logStep(activityLog, `${files.length} files fetched · ${allPaths.length} paths scanned`, id);
 
     const manifests = buildManifests(files);
-    const chunks = chunkFiles(files);
+    let chunks = chunkFiles(files);
     logStep(activityLog, `${chunks.length} semantic chunks generated`, id);
 
+    let embeddingsReady = false;
+    let vectorDbHealth: VectorDbHealth = "offline";
+    if (aiProvider.openai.isConfigured()) {
+      try {
+        logStep(activityLog, "generating OpenAI embeddings", id);
+        chunks = await aiProvider.embedChunks(chunks);
+        embeddingsReady = chunks.some((c) => c.embedding?.length);
+        vectorDbHealth = embeddingsReady ? "healthy" : "degraded";
+        logStep(
+          activityLog,
+          `embeddings stored · ${chunks.filter((c) => c.embedding?.length).length} vectors`,
+          id
+        );
+      } catch (embErr) {
+        console.warn("Embedding generation failed:", embErr);
+        logStep(activityLog, "embeddings skipped — keyword retrieval fallback", id);
+        vectorDbHealth = "degraded";
+      }
+    } else {
+      logStep(activityLog, "OPENAI_API_KEY missing — skipping embeddings", id);
+    }
+
     const treePreview = files.map((f) => f.path).slice(0, 40).join("\n");
-    const modelId = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
     const summaryPrompt = `Repository: ${fullName}
 Files (${files.length}):
 ${treePreview}
@@ -122,70 +141,71 @@ ${chunks
     let summaryPart = `${fullName} is a codebase with ${files.length} indexed source files across ${new Set(files.map((f) => f.path.split("/")[0])).size} top-level modules.`;
     let llmSummaryUsed = false;
     let llmTokens = 0;
+    const modelId = aiProvider.claude.modelId();
     try {
-      logStep(activityLog, "generating project summary via LLM", id);
+      logStep(activityLog, "generating project summary via Claude", id);
       const generateSummary = async () => {
-        const { text, usage } = await generateText({
-          model: openai(modelId),
-          system:
-            "Write only a plain 3-4 sentence project summary for engineers. No markdown headings, no code fences, no Mermaid, no JSON.",
-          prompt: summaryPrompt,
-        });
-        return { text, usage };
+        const result = await aiProvider.generateSummary(
+          { ...pending, chunks, fileCount: files.length, chunkCount: chunks.length } as RepoKnowledge,
+          summaryPrompt
+        );
+        if (!result) {
+          throw new Error("ANTHROPIC_API_KEY not configured");
+        }
+        return result;
       };
 
-      let text: string;
-      let usage: Awaited<ReturnType<typeof generateText>>["usage"];
+      let result: Awaited<ReturnType<typeof generateSummary>>;
       if (isTraceplaneEnabled()) {
         try {
-          ({ text, usage } = await withTraceplane(
+          result = await withTraceplane(
             {
               agent: "repograph-index-llm",
               model: modelId,
-              provider: "openai",
+              provider: "anthropic",
               framework: "ai-sdk",
               environment: process.env.NODE_ENV ?? "development",
               tags: [`repo:${id}`, fullName],
             },
             async (run) => {
               run.setInput(summaryPrompt);
-              const result = await generateSummary();
-              run.setOutput(result.text);
+              const out = await generateSummary();
+              run.setOutput(out.text);
               run.llmCall({
                 model: modelId,
-                inputTokens: result.usage?.inputTokens ?? 0,
-                outputTokens: result.usage?.outputTokens ?? 0,
+                inputTokens: out.inputTokens,
+                outputTokens: out.outputTokens,
               });
-              return result;
+              return out;
             }
-          ));
+          );
         } catch (traceErr) {
           console.warn(
             "[traceplane] LLM summary trace failed, continuing:",
             traceErr instanceof Error ? traceErr.message : traceErr
           );
-          ({ text, usage } = await generateSummary());
+          result = await generateSummary();
         }
       } else {
-        ({ text, usage } = await generateSummary());
+        result = await generateSummary();
       }
 
-      summaryPart = sanitizeSummary(text) || summaryPart;
+      summaryPart = result.text || summaryPart;
       llmSummaryUsed = true;
-      llmTokens = usage?.totalTokens ?? 0;
+      llmTokens = result.inputTokens + result.outputTokens;
       if (llmTokens > 0) {
         recordOpenAIUsage(llmTokens, "index_summary", modelId, id);
         pushOtelEvent({
           kind: "cost",
-          name: "engintel.openai.tokens",
+          name: "engintel.claude.tokens",
           value: llmTokens,
           unit: "tokens",
           attrs: { repo_id: id, operation: "index_summary", model: modelId },
         });
       }
     } catch (aiErr) {
-      console.warn("AI summary skipped:", aiErr);
-      logStep(activityLog, "LLM summary skipped — using heuristic analysis", id);
+      console.warn("Claude summary skipped:", aiErr);
+      logStep(activityLog, "Claude summary skipped — using heuristic analysis", id);
     }
 
     const architecture = analyzeArchitecture(allPaths, manifests, chunks);
@@ -212,8 +232,8 @@ ${chunks
       chunks,
       files: fileStats,
       languages: languageBreakdown(fileStats),
-      embeddingsReady: true,
-      vectorDbHealth: "healthy" as VectorDbHealth,
+      embeddingsReady,
+      vectorDbHealth,
       allPaths,
       manifests,
       architecture,
@@ -235,7 +255,6 @@ ${chunks
     );
     const observability = buildObservabilitySnapshot(partial, indexingDurationMs);
 
-    logStep(activityLog, "embeddings stored · vector index online", id);
     logStep(activityLog, `health score: ${healthScore.overall}/100 (${healthScore.grade})`, id);
     logStep(activityLog, "repository sync complete", id);
 

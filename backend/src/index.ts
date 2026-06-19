@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { parseRepoInput } from "./lib/github";
 import { indexRepository } from "./lib/indexer";
 import { getRepo, listRepos, listReposForUser } from "./lib/knowledge";
@@ -11,6 +11,13 @@ import {
   retrieveChunks,
   retrieveChunksScored,
 } from "./lib/rag";
+import {
+  aiProvider,
+  REPOSITORY_CHAT_SYSTEM,
+  claudeProvider,
+  getAIConfig,
+} from "./lib/ai";
+import { ensureRepoAiInsights } from "./lib/ai/insights-service";
 import { pushOtelEvent, sseOtelHandler, setTraceRecorder } from "./lib/telemetry-stream";
 import { analyzeDeployment } from "./lib/deployment-analyzer";
 import { computeHealthScore } from "./lib/health-score";
@@ -287,27 +294,42 @@ app.get("/api/repos/:id/architecture", async (req, res) => {
     }
 
     const current = rebuilt.repo;
-    let mermaid = sanitizeMermaid(current.architectureMermaid?.trim() ?? "");
+    const withInsights = await ensureRepoAiInsights(current, {
+      force: force || !current.aiInsights,
+    });
 
-    const summary = sanitizeSummary(current.summary);
-    if (!mermaid && current.architecture) {
-      mermaid = buildMermaidFromArchitecture(current.architecture, summary).slice(0, 4000);
+    let mermaid = sanitizeMermaid(
+      withInsights.aiInsights?.architectureMermaid?.trim() ??
+        withInsights.architectureMermaid?.trim() ??
+        ""
+    );
+
+    const summary = sanitizeSummary(withInsights.summary);
+    if (!mermaid && withInsights.architecture) {
+      mermaid = buildMermaidFromArchitecture(withInsights.architecture, summary).slice(
+        0,
+        4000
+      );
     }
 
-    const topology = buildArchitectureTopology(current);
-    const dependencyGraph = buildDependencyGraph(current);
-    const workflow = buildWorkflowDiagram(current);
+    const topology = buildArchitectureTopology(withInsights);
+    const dependencyGraph = buildDependencyGraph(withInsights);
+    const workflow = buildWorkflowDiagram(withInsights);
+    const claudeWorkflowMermaid = withInsights.aiInsights?.workflowMermaid;
 
     res.json({
-      fullName: current.fullName,
+      fullName: withInsights.fullName,
       summary,
       architectureMermaid: mermaid,
-      analysis: current.architecture ?? null,
-      folderTree: current.folderTree ?? [],
+      analysis: withInsights.architecture ?? null,
+      folderTree: withInsights.folderTree ?? [],
       topology,
       dependencyGraph,
       workflow,
-      excalidrawScene: buildExcalidrawScene(current, topology),
+      claudeWorkflowMermaid: claudeWorkflowMermaid ?? null,
+      dependencyAnalysis: withInsights.aiInsights?.dependencyAnalysis ?? null,
+      aiInsightsGeneratedAt: withInsights.aiInsights?.generatedAt ?? null,
+      excalidrawScene: buildExcalidrawScene(withInsights, topology),
       rebuilt: rebuilt.rebuilt,
     });
   } catch (err) {
@@ -382,7 +404,7 @@ app.post("/api/repos/:id/search", async (req, res) => {
     return;
   }
   const searchStart = performance.now();
-  const scored = retrieveChunksScored(repo.chunks, query, 8);
+  const scored = await retrieveChunksScored(repo.chunks, query, 8);
   const searchMs = performance.now() - searchStart;
   const hits = scored.map(({ chunk, score }) => ({
     path: chunk.path,
@@ -405,7 +427,61 @@ app.post("/api/repos/:id/search", async (req, res) => {
     results: hits,
     latencyMs: searchMs,
     vectorDbHealth: repo.vectorDbHealth ?? "healthy",
+    retrievalMode: repo.chunks.some((c) => c.embedding?.length)
+      ? "vector"
+      : "keyword",
   });
+});
+
+app.post("/api/repos/:id/explain", async (req, res) => {
+  const repo = await getRepoAuthorized(req, req.params.id);
+  if (!repo || repo.status !== "ready") {
+    res.status(404).json({ error: "Index repository first" });
+    return;
+  }
+  if (!claudeProvider.isConfigured()) {
+    res.status(503).json({
+      error: "ANTHROPIC_API_KEY is required for explanations.",
+    });
+    return;
+  }
+
+  const subject =
+    typeof req.body.subject === "string" ? req.body.subject.trim() : "";
+  const focus = typeof req.body.focus === "string" ? req.body.focus.trim() : "";
+  if (!subject) {
+    res.status(400).json({ error: "subject is required" });
+    return;
+  }
+
+  try {
+    const result = await aiProvider.explain(
+      repo,
+      subject,
+      focus || "architecture and responsibilities"
+    );
+    const tokens = result.inputTokens + result.outputTokens;
+    if (tokens > 0) {
+      recordOpenAIUsage(tokens, "explain", result.model, repo.id);
+      pushOtelEvent({
+        kind: "cost",
+        name: "engintel.claude.tokens",
+        value: tokens,
+        unit: "tokens",
+        attrs: { repo_id: repo.id, operation: "explain", model: result.model },
+      });
+    }
+    res.json({
+      subject,
+      focus,
+      markdown: result.text,
+      model: result.model,
+    });
+  } catch (err) {
+    res.status(503).json({
+      error: claudeProvider.formatUserError(err),
+    });
+  }
 });
 
 app.post("/api/repos/index", async (req, res) => {
@@ -447,8 +523,11 @@ app.post("/api/chat", async (req, res) => {
     res.status(400).json({ error: "messages array is required" });
     return;
   }
-  if (!process.env.OPENAI_API_KEY) {
-    res.status(500).json({ error: "OPENAI_API_KEY is not configured" });
+  if (!claudeProvider.isConfigured()) {
+    res.status(503).json({
+      error:
+        "ANTHROPIC_API_KEY is not configured. Add it to backend/.env for chat.",
+    });
     return;
   }
 
@@ -461,10 +540,7 @@ app.post("/api/chat", async (req, res) => {
 
   const ctxChat = parseRepoAccessFromRequest(req);
 
-  let system = `You are an AI Engineering Intelligence assistant for production codebases.
-Answer using repository context. Suggest concrete fixes with file paths.
-When asked for architecture, include or refine Mermaid diagrams.
-Be precise, production-focused, and concise.`;
+  let system = REPOSITORY_CHAT_SYSTEM;
 
   if (repoId) {
     const repo = await getRepo(repoId);
@@ -473,10 +549,13 @@ Be precise, production-focused, and concise.`;
       canAccessRepo(repo, ctxChat) &&
       repo.status === "ready"
     ) {
-      const relevant = retrieveChunks(repo.chunks, lastText, 6);
+      const relevant = await retrieveChunks(repo.chunks, lastText, 6);
       const wantsDiagram =
         /architecture|diagram|flow|structure/i.test(lastText);
       system += `\n\n## Repository: ${repo.fullName}\n${repo.summary}\n\n## Relevant code\n${buildContextBlock(relevant)}`;
+      if (repo.aiInsights?.dependencyAnalysis) {
+        system += `\n\n## Dependency analysis\n${repo.aiInsights.dependencyAnalysis.slice(0, 3000)}`;
+      }
       if (wantsDiagram && repo.architectureMermaid) {
         system += `\n\n## Stored architecture (Mermaid)\n\`\`\`mermaid\n${repo.architectureMermaid}\n\`\`\``;
       }
@@ -489,12 +568,12 @@ Be precise, production-focused, and concise.`;
   }
 
   try {
-    const modelId = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const modelId = getAIConfig().reasoningModel;
     const traceRun = traceplaneReady
       ? startTraceRun({
           agent: "repograph-chat",
           model: modelId,
-          provider: "openai",
+          provider: "anthropic",
           framework: "ai-sdk",
           environment: process.env.NODE_ENV ?? "development",
           tags: repoId ? [`repo:${repoId}`] : [],
@@ -504,7 +583,7 @@ Be precise, production-focused, and concise.`;
 
     const llmStarted = Date.now();
     const result = streamText({
-      model: openai(modelId),
+      model: anthropic(modelId),
       system,
       messages: await convertToModelMessages(messages),
       onFinish: ({ usage }) => {
@@ -513,7 +592,7 @@ Be precise, production-focused, and concise.`;
           recordOpenAIUsage(tokens, "chat", modelId, repoId);
           pushOtelEvent({
             kind: "cost",
-            name: "engintel.openai.tokens",
+            name: "engintel.claude.tokens",
             value: tokens,
             unit: "tokens",
             attrs: { repo_id: repoId, operation: "chat", model: modelId },
@@ -543,7 +622,9 @@ Be precise, production-focused, and concise.`;
     }
   } catch (error) {
     console.error("Chat error:", error);
-    res.status(500).json({ error: "Failed to process chat request" });
+    res.status(503).json({
+      error: claudeProvider.formatUserError(error),
+    });
   }
 });
 

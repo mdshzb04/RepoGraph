@@ -100,6 +100,9 @@ export type ArchitectureData = {
   topology?: ArchitectureTopology;
   dependencyGraph?: DependencyGraph;
   workflow?: WorkflowDiagram;
+  claudeWorkflowMermaid?: string | null;
+  dependencyAnalysis?: string | null;
+  aiInsightsGeneratedAt?: string | null;
   excalidrawScene?: ExcalidrawScene;
   analysis: {
     structure: string;

@@ -21,18 +21,19 @@ export function detectLanguage(path: string): string {
 }
 
 export function buildFileStats(chunks: CodeChunk[], indexedAt: string): FileStat[] {
-  const map = new Map<string, { count: number }>();
+  const map = new Map<string, { count: number; embedded: number }>();
   for (const c of chunks) {
-    const cur = map.get(c.path) ?? { count: 0 };
+    const cur = map.get(c.path) ?? { count: 0, embedded: 0 };
     cur.count++;
+    if (c.embedding?.length) cur.embedded++;
     map.set(c.path, cur);
   }
   return [...map.entries()]
-    .map(([path, { count }]) => ({
+    .map(([path, { count, embedded }]) => ({
       path,
       chunkCount: count,
       language: detectLanguage(path),
-      embedded: true,
+      embedded: embedded > 0 && embedded >= count,
       processedAt: indexedAt,
     }))
     .sort((a, b) => b.chunkCount - a.chunkCount);
