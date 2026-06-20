@@ -42,20 +42,11 @@ export function getAuthConfigStatus() {
   }
   if (!env.siteUrl && isProd) {
     warnings.push(
-      `Set AUTH_URL (or NEXTAUTH_URL) to ${PRODUCTION_SITE_URL} in Vercel.`
-    );
-  } else if (isProd && env.siteUrl && !env.siteUrl.includes("repograph.shazeb.site")) {
-    warnings.push(
-      `AUTH_URL is ${env.siteUrl}; expected ${PRODUCTION_SITE_URL} for production OAuth.`
+      "Set AUTH_URL (or NEXTAUTH_URL) to your public site URL in Vercel, e.g. https://repograph.shazeb.site"
     );
   }
   if (!env.githubId || !env.githubSecret) {
     warnings.push("Set AUTH_GITHUB_ID and AUTH_GITHUB_SECRET (or GITHUB_ID / GITHUB_SECRET).");
-  }
-  if (isProd && env.callbackUrl !== `${PRODUCTION_SITE_URL}${GITHUB_OAUTH_CALLBACK_PATH}`) {
-    warnings.push(
-      `GitHub callback should be ${PRODUCTION_SITE_URL}${GITHUB_OAUTH_CALLBACK_PATH} (got ${env.callbackUrl ?? "none"}).`
-    );
   }
 
   if (warnings.length && isProd) {

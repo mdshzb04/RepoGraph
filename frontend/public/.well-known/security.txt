@@ -1,0 +1,7 @@
+Contact: mailto:security@shazeb.site
+Preferred-Languages: en
+Canonical: https://repograph.shazeb.site/.well-known/security.txt
+Policy: https://repograph.shazeb.site/login
+
+# RepoGraph — AI GitHub engineering copilot (official app).
+# GitHub OAuth sign-in only; credentials are handled by GitHub, not this site.
