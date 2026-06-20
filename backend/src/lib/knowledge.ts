@@ -1,6 +1,15 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { randomUUID } from "crypto";
+import type { ArchitectureAnalysis } from "./architecture-analyzer";
+import type { ExcalidrawScene } from "./excalidraw-scene";
+import type { HealthScore } from "./health-score";
+import type { ObservabilitySnapshot } from "./observability";
+import type { RepoAiInsights } from "./ai/types";
+import type { ManifestMap } from "./repo-scanner";
+import type { RepoAccessContext } from "./repo-access";
+import { canAccessRepo } from "./repo-access";
+import { prisma } from "./db/client";
+import { loadRepoChunks, replaceRepoChunks } from "./db/chunk-store";
+import { repoKnowledgeToRowData, rowToRepoKnowledge } from "./db/repo-mapper";
 
 export type CodeChunk = {
   id: string;
@@ -19,15 +28,6 @@ export type FileStat = {
   embedded: boolean;
   processedAt: string;
 };
-
-import type { ArchitectureAnalysis } from "./architecture-analyzer";
-import type { ExcalidrawScene } from "./excalidraw-scene";
-import type { HealthScore } from "./health-score";
-import type { ObservabilitySnapshot } from "./observability";
-import type { RepoAiInsights } from "./ai/types";
-import type { ManifestMap } from "./repo-scanner";
-import type { RepoAccessContext } from "./repo-access";
-import { canAccessRepo } from "./repo-access";
 
 export type VectorDbHealth = "healthy" | "degraded" | "offline";
 
@@ -53,54 +53,42 @@ export type RepoKnowledge = {
   manifests?: ManifestMap;
   architecture?: ArchitectureAnalysis;
   excalidrawScene?: ExcalidrawScene;
-  /** @deprecated use excalidrawScene */
   excalidrawScenes?: { system?: ExcalidrawScene };
   healthScore?: HealthScore;
   observability?: ObservabilitySnapshot;
-  /** Claude-generated architecture, workflow, and dependency analysis. */
   aiInsights?: RepoAiInsights;
   indexingDurationMs?: number;
-  /** Set when indexed via authenticated BFF — used for per-user isolation. */
   indexedBySub?: string;
   indexedByEmail?: string;
 };
 
-const DATA_DIR = path.join(process.cwd(), "data", "repos");
-
-async function ensureDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-}
-
-function repoPath(id: string): string {
-  return path.join(DATA_DIR, `${id}.json`);
-}
-
 export async function saveRepo(knowledge: RepoKnowledge): Promise<void> {
-  await ensureDir();
-  await fs.writeFile(repoPath(knowledge.id), JSON.stringify(knowledge, null, 2));
+  const data = repoKnowledgeToRowData(knowledge);
+  await prisma.repository.upsert({
+    where: { id: knowledge.id },
+    create: data,
+    update: data,
+  });
+  await replaceRepoChunks(knowledge.id, knowledge.chunks);
 }
 
 export async function getRepo(id: string): Promise<RepoKnowledge | null> {
-  try {
-    const raw = await fs.readFile(repoPath(id), "utf8");
-    return JSON.parse(raw) as RepoKnowledge;
-  } catch {
-    return null;
-  }
+  const row = await prisma.repository.findUnique({ where: { id } });
+  if (!row) return null;
+  const chunks = await loadRepoChunks(id);
+  return rowToRepoKnowledge(row, chunks);
 }
 
 export async function listRepos(): Promise<RepoKnowledge[]> {
-  await ensureDir();
-  const files = await fs.readdir(DATA_DIR);
+  const rows = await prisma.repository.findMany({
+    orderBy: { indexedAt: "desc" },
+  });
   const repos: RepoKnowledge[] = [];
-  for (const file of files) {
-    if (!file.endsWith(".json")) continue;
-    const raw = await fs.readFile(path.join(DATA_DIR, file), "utf8");
-    repos.push(JSON.parse(raw) as RepoKnowledge);
+  for (const row of rows) {
+    const chunks = await loadRepoChunks(row.id);
+    repos.push(rowToRepoKnowledge(row, chunks));
   }
-  return repos.sort(
-    (a, b) => new Date(b.indexedAt).getTime() - new Date(a.indexedAt).getTime()
-  );
+  return repos;
 }
 
 export async function listReposForUser(

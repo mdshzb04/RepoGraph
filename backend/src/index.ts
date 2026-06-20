@@ -2,20 +2,24 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
+import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { parseRepoInput } from "./lib/github";
-import { indexRepository } from "./lib/indexer";
+import { enqueueIndexRepository } from "./lib/indexer";
+import { getIndexJob } from "./lib/index-jobs";
 import { getRepo, listRepos, listReposForUser } from "./lib/knowledge";
 import {
   buildContextBlock,
   retrieveChunks,
-  retrieveChunksScored,
+  retrieveHybrid,
 } from "./lib/rag";
 import {
   aiProvider,
   REPOSITORY_CHAT_SYSTEM,
   claudeProvider,
+  openAIProvider,
   getAIConfig,
+  reasoningRouter,
 } from "./lib/ai";
 import { ensureRepoAiInsights } from "./lib/ai/insights-service";
 import { pushOtelEvent, sseOtelHandler, setTraceRecorder } from "./lib/telemetry-stream";
@@ -33,7 +37,7 @@ import {
 } from "./lib/architecture-cache";
 import { buildDependencyGraph } from "./lib/dependency-graph";
 import { buildExcalidrawScene } from "./lib/excalidraw-scene";
-import { buildWorkflowDiagram } from "./lib/workflow-diagram";
+import { buildWorkflowDiagram, buildWorkflowMermaid } from "./lib/workflow-diagram";
 import { buildObservabilitySnapshot } from "./lib/observability";
 import {
   canAccessRepo,
@@ -62,13 +66,17 @@ import {
   isTraceplaneEnabled,
   startTraceRun,
 } from "./lib/traceplane";
+import { serve } from "inngest/express";
+import { inngest, inngestFunctions, isInngestEnabled } from "./inngest";
+import { connectDatabase, prisma } from "./lib/db/client";
 
 dotenv.config();
 initTelemetry();
 const traceplaneReady = initTraceplane();
 setTraceRecorder((repoId, kind) => recordTraceEvent(repoId, kind));
 
-void listRepos().then((repos) => {
+async function hydrateTelemetryFromRepos(): Promise<void> {
+  const repos = await listRepos();
   const ready = repos.filter((r) => r.status === "ready");
   if (!ready.length) return;
   hydrateIndexingBaseline(
@@ -92,8 +100,8 @@ void listRepos().then((repos) => {
   );
   const idx = getLiveTelemetrySnapshot().indexing;
   exportIndexBaselineToOtel(idx.totalJobs, idx.totalFiles, idx.totalChunks);
-  void flushTelemetry();
-});
+  await flushTelemetry();
+}
 
 const app = express();
 const port = Number(process.env.PORT) || 8000;
@@ -122,6 +130,14 @@ app.use(
 );
 app.use(express.json({ limit: "4mb" }));
 app.use(telemetryMiddleware());
+
+app.use(
+  "/api/inngest",
+  serve({
+    client: inngest,
+    functions: inngestFunctions,
+  })
+);
 
 function readGithubUserToken(req: express.Request): string | undefined {
   const raw = req.headers["x-github-user-token"];
@@ -315,7 +331,10 @@ app.get("/api/repos/:id/architecture", async (req, res) => {
     const topology = buildArchitectureTopology(withInsights);
     const dependencyGraph = buildDependencyGraph(withInsights);
     const workflow = buildWorkflowDiagram(withInsights);
-    const claudeWorkflowMermaid = withInsights.aiInsights?.workflowMermaid;
+    const staticWorkflowMermaid = buildWorkflowMermaid(withInsights, workflow);
+    const workflowMermaid =
+      withInsights.aiInsights?.workflowMermaid?.trim() || staticWorkflowMermaid;
+    const claudeWorkflowMermaid = withInsights.aiInsights?.workflowMermaid ?? null;
 
     res.json({
       fullName: withInsights.fullName,
@@ -326,9 +345,11 @@ app.get("/api/repos/:id/architecture", async (req, res) => {
       topology,
       dependencyGraph,
       workflow,
+      workflowMermaid,
       claudeWorkflowMermaid: claudeWorkflowMermaid ?? null,
       dependencyAnalysis: withInsights.aiInsights?.dependencyAnalysis ?? null,
       aiInsightsGeneratedAt: withInsights.aiInsights?.generatedAt ?? null,
+      aiInsightsProvider: withInsights.aiInsights?.reasoningProvider ?? null,
       excalidrawScene: buildExcalidrawScene(withInsights, topology),
       rebuilt: rebuilt.rebuilt,
     });
@@ -404,7 +425,12 @@ app.post("/api/repos/:id/search", async (req, res) => {
     return;
   }
   const searchStart = performance.now();
-  const scored = await retrieveChunksScored(repo.chunks, query, 8);
+  const { results: scored, mode: retrievalMode } = await retrieveHybrid(
+    repo.chunks,
+    query,
+    8,
+    repo.id
+  );
   const searchMs = performance.now() - searchStart;
   const hits = scored.map(({ chunk, score }) => ({
     path: chunk.path,
@@ -427,9 +453,7 @@ app.post("/api/repos/:id/search", async (req, res) => {
     results: hits,
     latencyMs: searchMs,
     vectorDbHealth: repo.vectorDbHealth ?? "healthy",
-    retrievalMode: repo.chunks.some((c) => c.embedding?.length)
-      ? "vector"
-      : "keyword",
+    retrievalMode,
   });
 });
 
@@ -439,7 +463,7 @@ app.post("/api/repos/:id/explain", async (req, res) => {
     res.status(404).json({ error: "Index repository first" });
     return;
   }
-  if (!claudeProvider.isConfigured()) {
+  if (!reasoningRouter.isConfigured()) {
     res.status(503).json({
       error: "ANTHROPIC_API_KEY is required for explanations.",
     });
@@ -479,7 +503,7 @@ app.post("/api/repos/:id/explain", async (req, res) => {
     });
   } catch (err) {
     res.status(503).json({
-      error: claudeProvider.formatUserError(err),
+      error: reasoningRouter.formatUserError(err),
     });
   }
 });
@@ -497,20 +521,45 @@ app.post("/api/repos/index", async (req, res) => {
   }
   try {
     const ctx = parseRepoAccessFromRequest(req);
-    const knowledge = await indexRepository(parsed.owner, parsed.repo, {
+    const enqueued = await enqueueIndexRepository(parsed.owner, parsed.repo, {
       githubUserToken: readGithubUserToken(req),
       indexedBySub: ctx.userSub ?? null,
       indexedByEmail: ctx.userEmail ?? null,
     });
-    res.json({
-      ...repoSummary(knowledge),
-      architecture: knowledge.architecture,
+    res.status(202).json({
+      ...enqueued,
+      inngest: isInngestEnabled(),
     });
   } catch (err) {
     res.status(500).json({
-      error: err instanceof Error ? err.message : "Failed to index repository",
+      error: err instanceof Error ? err.message : "Failed to queue index job",
     });
   }
+});
+
+app.get("/api/repos/index/jobs/:jobId", async (req, res) => {
+  const job = await getIndexJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: "Index job not found" });
+    return;
+  }
+  const ctx = parseRepoAccessFromRequest(req);
+  if (job.indexedBySub && ctx.userSub && job.indexedBySub !== ctx.userSub) {
+    res.status(404).json({ error: "Index job not found" });
+    return;
+  }
+  res.json({
+    jobId: job.id,
+    id: job.repoId,
+    fullName: job.fullName,
+    status: job.status,
+    progress: job.progress,
+    step: job.step,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    ...(job.status === "completed" && job.result ? job.result : {}),
+  });
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -523,10 +572,10 @@ app.post("/api/chat", async (req, res) => {
     res.status(400).json({ error: "messages array is required" });
     return;
   }
-  if (!claudeProvider.isConfigured()) {
+  if (!reasoningRouter.isConfigured()) {
     res.status(503).json({
       error:
-        "ANTHROPIC_API_KEY is not configured. Add it to backend/.env for chat.",
+        "Configure ANTHROPIC_API_KEY (or OPENAI_API_KEY as fallback) for chat.",
     });
     return;
   }
@@ -549,7 +598,7 @@ app.post("/api/chat", async (req, res) => {
       canAccessRepo(repo, ctxChat) &&
       repo.status === "ready"
     ) {
-      const relevant = await retrieveChunks(repo.chunks, lastText, 6);
+      const relevant = await retrieveChunks(repo.chunks, lastText, 6, repo.id);
       const wantsDiagram =
         /architecture|diagram|flow|structure/i.test(lastText);
       system += `\n\n## Repository: ${repo.fullName}\n${repo.summary}\n\n## Relevant code\n${buildContextBlock(relevant)}`;
@@ -568,25 +617,14 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
-    const modelId = getAIConfig().reasoningModel;
-    const traceRun = traceplaneReady
-      ? startTraceRun({
-          agent: "repograph-chat",
-          model: modelId,
-          provider: "anthropic",
-          framework: "ai-sdk",
-          environment: process.env.NODE_ENV ?? "development",
-          tags: repoId ? [`repo:${repoId}`] : [],
-        })
-      : null;
-    traceRun?.setInput(lastText);
+    const ai = getAIConfig();
+    let provider: "anthropic" | "openai" = "anthropic";
+    let modelId = ai.reasoningModel;
 
-    const llmStarted = Date.now();
-    const result = streamText({
-      model: anthropic(modelId),
+    const streamOpts = {
       system,
       messages: await convertToModelMessages(messages),
-      onFinish: ({ usage }) => {
+      onFinish: ({ usage }: { usage?: { totalTokens?: number } }) => {
         const tokens = usage?.totalTokens ?? 0;
         if (tokens > 0 && repoId) {
           recordOpenAIUsage(tokens, "chat", modelId, repoId);
@@ -595,12 +633,55 @@ app.post("/api/chat", async (req, res) => {
             name: "engintel.claude.tokens",
             value: tokens,
             unit: "tokens",
-            attrs: { repo_id: repoId, operation: "chat", model: modelId },
+            attrs: {
+              repo_id: repoId,
+              operation: "chat",
+              model: modelId,
+              provider,
+            },
           });
         }
         void flushTelemetry();
       },
-    });
+    };
+
+    let result;
+    if (claudeProvider.isConfigured()) {
+      try {
+        result = streamText({ model: anthropic(modelId), ...streamOpts });
+        console.log(`[ai:router] task=repository_chat provider=anthropic model=${modelId}`);
+      } catch (first) {
+        if (openAIProvider.isConfigured()) {
+          provider = "openai";
+          modelId = ai.openaiReasoningModel;
+          result = streamText({ model: openai(modelId), ...streamOpts });
+          console.log(
+            `[ai:router] task=repository_chat provider=openai model=${modelId} (fallback)`
+          );
+        } else {
+          throw first;
+        }
+      }
+    } else {
+      provider = "openai";
+      modelId = ai.openaiReasoningModel;
+      result = streamText({ model: openai(modelId), ...streamOpts });
+      console.log(`[ai:router] task=repository_chat provider=openai model=${modelId}`);
+    }
+
+    const traceRun = traceplaneReady
+      ? startTraceRun({
+          agent: "repograph-chat",
+          model: modelId,
+          provider,
+          framework: "ai-sdk",
+          environment: process.env.NODE_ENV ?? "development",
+          tags: repoId ? [`repo:${repoId}`] : [],
+        })
+      : null;
+    traceRun?.setInput(lastText);
+
+    const llmStarted = Date.now();
     result.pipeUIMessageStreamToResponse(res);
 
     if (traceRun) {
@@ -623,32 +704,47 @@ app.post("/api/chat", async (req, res) => {
   } catch (error) {
     console.error("Chat error:", error);
     res.status(503).json({
-      error: claudeProvider.formatUserError(error),
+      error: reasoningRouter.formatUserError(error),
     });
   }
 });
 
-const server = app.listen(port, host, () => {
-  const status = getStatus();
-  const ai = getAIConfig();
-  console.log(`Engineering Intelligence API at http://${host}:${port}`);
-  console.log(
-    `[ai] openai=${ai.openaiApiKey ? "configured (embeddings)" : "missing"} · anthropic=${ai.anthropicApiKey ? `configured (${ai.reasoningModel})` : "missing"}`
-  );
-  console.log(
-    `[telemetry] ${status.enabled ? "Grafana Cloud OTLP enabled" : "disabled (set GRAFANA_CLOUD_* to enable)"}`
-  );
-  console.log(
-    `[traceplane] ${isTraceplaneEnabled() ? "enabled" : "disabled (set TRACEPLANE_API_KEY to enable)"}`
-  );
-});
+async function startServer(): Promise<void> {
+  await connectDatabase();
+  await hydrateTelemetryFromRepos();
 
-async function gracefulShutdown(signal: string): Promise<void> {
-  console.log(`[shutdown] ${signal} received`);
-  server.close();
-  await shutdownTelemetry();
-  process.exit(0);
+  const server = app.listen(port, host, () => {
+    const status = getStatus();
+    const ai = getAIConfig();
+    console.log(`Engineering Intelligence API at http://${host}:${port}`);
+    console.log(`[db] Neon PostgreSQL connected`);
+    console.log(
+      `[ai] openai=${ai.openaiApiKey ? "configured (embeddings)" : "missing"} · anthropic=${ai.anthropicApiKey ? `configured (${ai.reasoningModel})` : "missing"}`
+    );
+    console.log(
+      `[telemetry] ${status.enabled ? "Grafana Cloud OTLP enabled" : "disabled (set GRAFANA_CLOUD_* to enable)"}`
+    );
+    console.log(
+      `[inngest] ${isInngestEnabled() ? "cloud events enabled" : "local worker fallback (set INNGEST_EVENT_KEY for production)"}`
+    );
+    console.log(
+      `[traceplane] ${isTraceplaneEnabled() ? "enabled" : "disabled (set TRACEPLANE_API_KEY to enable)"}`
+    );
+  });
+
+  async function gracefulShutdown(signal: string): Promise<void> {
+    console.log(`[shutdown] ${signal} received`);
+    server.close();
+    await shutdownTelemetry();
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
 }
 
-process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
+void startServer().catch((err) => {
+  console.error("[startup] failed:", err);
+  process.exit(1);
+});

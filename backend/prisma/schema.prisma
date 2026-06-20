@@ -1,0 +1,113 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector(schema: "public")]
+}
+
+model Repository {
+  id                  String   @id @db.Uuid
+  fullName            String   @map("full_name")
+  defaultBranch       String   @default("main") @map("default_branch")
+  indexedAt           DateTime @map("indexed_at")
+  status              String
+  error               String?
+  fileCount           Int      @default(0) @map("file_count")
+  chunkCount          Int      @default(0) @map("chunk_count")
+  summary             String   @default("")
+  architectureMermaid String   @default("") @map("architecture_mermaid")
+  embeddingsReady     Boolean  @default(false) @map("embeddings_ready")
+  vectorDbHealth      String?  @map("vector_db_health")
+  indexingDurationMs  Int?     @map("indexing_duration_ms")
+  indexedBySub        String?  @map("indexed_by_sub")
+  indexedByEmail      String?  @map("indexed_by_email")
+  languages           Json?
+  activityLog         Json?    @map("activity_log")
+  folderTree          Json?    @map("folder_tree")
+  allPaths            Json?    @map("all_paths")
+  manifests           Json?
+  architecture        Json?
+  excalidrawScene     Json?    @map("excalidraw_scene")
+  healthScore         Json?    @map("health_score")
+  observability       Json?
+  aiInsights          Json?    @map("ai_insights")
+  files               Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  chunks       FileChunk[]
+  indexJobs    IndexJob[]
+  chatSessions ChatSession[]
+
+  @@map("repositories")
+}
+
+model FileChunk {
+  id         String                      @id @default(uuid()) @db.Uuid
+  repoId     String                      @map("repository_id") @db.Uuid
+  chunkKey   String                      @map("chunk_key")
+  path       String
+  content    String
+  startLine  Int                         @map("start_line")
+  endLine    Int                         @map("end_line")
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime                    @default(now()) @map("created_at")
+
+  repository Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, chunkKey])
+  @@index([repoId])
+  @@map("file_chunks")
+}
+
+model IndexJob {
+  id             String   @id @default(uuid()) @db.Uuid
+  repoId         String   @map("repository_id") @db.Uuid
+  owner          String
+  repo           String
+  fullName       String   @map("full_name")
+  status         String
+  progress       Int      @default(0)
+  step           String   @default("")
+  error          String?
+  result         Json?
+  indexedBySub   String?  @map("indexed_by_sub")
+  indexedByEmail String?  @map("indexed_by_email")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  repository Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@index([repoId])
+  @@map("index_jobs")
+}
+
+model ChatSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  repoId    String?  @map("repository_id") @db.Uuid
+  userSub   String?  @map("user_sub")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  repository Repository?  @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  role      String
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}

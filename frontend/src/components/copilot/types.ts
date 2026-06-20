@@ -74,6 +74,7 @@ export type DependencyGraph = {
     cluster: string;
     icon: string;
     meta?: string;
+    parentId?: string;
   }[];
   edges: { from: string; to: string; kind?: string; animated?: boolean }[];
 };
@@ -89,7 +90,7 @@ export type WorkflowDiagram = {
   title: string;
   steps: WorkflowStep[];
   edges: { from: string; to: string; label?: string }[];
-  source: "routes" | "services" | "mixed";
+  source: "lifecycle" | "routes" | "services" | "mixed";
 };
 
 export type ArchitectureData = {
@@ -100,9 +101,11 @@ export type ArchitectureData = {
   topology?: ArchitectureTopology;
   dependencyGraph?: DependencyGraph;
   workflow?: WorkflowDiagram;
+  workflowMermaid?: string | null;
   claudeWorkflowMermaid?: string | null;
   dependencyAnalysis?: string | null;
   aiInsightsGeneratedAt?: string | null;
+  aiInsightsProvider?: "anthropic" | "openai" | null;
   excalidrawScene?: ExcalidrawScene;
   analysis: {
     structure: string;

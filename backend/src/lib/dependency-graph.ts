@@ -8,6 +8,8 @@ export type DepNode = {
   cluster: string;
   icon: string;
   meta?: string;
+  /** Nested under a group node in the same cluster. */
+  parentId?: string;
 };
 
 export type DepEdge = {
@@ -24,11 +26,19 @@ export type DependencyGraph = {
 };
 
 const CLUSTER_TITLES: Record<string, string> = {
-  presentation: "Presentation",
-  api: "API & services",
-  ai: "AI & workers",
-  data: "Data & storage",
-  platform: "Platform",
+  presentation: "Frontend",
+  api: "Backend",
+  ai: "AI",
+  data: "Data",
+  platform: "Infrastructure",
+};
+
+const CLUSTER_GROUPS: Record<string, string[]> = {
+  presentation: ["UI", "Auth", "Dashboard"],
+  api: ["API", "Services", "Workers"],
+  ai: ["OpenAI", "Claude", "Embeddings"],
+  data: ["PostgreSQL", "Vector Store", "File Storage"],
+  platform: ["CI/CD", "Telemetry", "Hosting"],
 };
 
 function repoText(repo: RepoKnowledge): string {
@@ -36,66 +46,48 @@ function repoText(repo: RepoKnowledge): string {
   return `${repo.summary} ${repo.architectureMermaid} ${paths}`.toLowerCase();
 }
 
-function clusterFor(label: string, type?: string): string {
-  const l = label.toLowerCase();
-  if (/user|client|frontend|next\.js|ui/i.test(l) || type === "frontend") return "presentation";
-  if (/openai|pinecone|embed|llm|rag|anthropic|worker|inngest|queue/i.test(l) || type === "worker")
-    return "ai";
-  if (/database|postgres|repo|storage|supabase|prisma|data layer/i.test(l) || type === "database")
-    return "data";
-  if (/otel|grafana|ci\/cd|docker|container runtime/i.test(l) || type === "infra") return "platform";
-  return "api";
-}
-
 function iconFor(cluster: string, label: string): string {
   const l = label.toLowerCase();
-  if (cluster === "presentation") return /user/i.test(l) ? "user" : "monitor";
-  if (cluster === "ai") return /worker|queue|inngest/i.test(l) ? "workflow" : "sparkles";
+  if (cluster === "presentation") return /auth/i.test(l) ? "user" : "monitor";
+  if (cluster === "ai") return /embed|vector/i.test(l) ? "database" : "sparkles";
   if (cluster === "data") return "database";
   if (cluster === "platform") return /ci/i.test(l) ? "git-branch" : "activity";
-  if (/route|endpoint|get |post /i.test(l)) return "route";
+  if (/worker|queue/i.test(l)) return "workflow";
   return "server";
 }
 
-function parseMermaid(mermaid: string): {
-  nodes: { id: string; label: string }[];
-  edges: { from: string; to: string }[];
-} {
-  const nodes: { id: string; label: string }[] = [];
-  const edges: { from: string; to: string }[] = [];
-  const nodeRe = /(\w+)\s*\[([^\]]+)\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = nodeRe.exec(mermaid))) {
-    nodes.push({ id: m[1], label: m[2].replace(/"/g, "").trim() });
-  }
-  const edgeRe = /(\w+)\s*-->\|?[^|]*\|?\s*(\w+)/g;
-  while ((m = edgeRe.exec(mermaid))) {
-    edges.push({ from: m[1], to: m[2] });
-  }
-  const simple = /(\w+)\s*-->\s*(\w+)/g;
-  while ((m = simple.exec(mermaid))) {
-    const from = m[1];
-    const to = m[2];
-    if (!edges.some((e) => e.from === from && e.to === to)) edges.push({ from, to });
-  }
-  return { nodes, edges };
-}
+function pickGroupItems(cluster: string, text: string, arch: ArchitectureAnalysis | null): string[] {
+  const defaults = CLUSTER_GROUPS[cluster] ?? ["Core"];
+  const picked: string[] = [];
 
-function labelToId(label: string, arch: ArchitectureAnalysis | null): string | null {
-  const l = label.toLowerCase();
-  const svc = arch?.services.find(
-    (s) =>
-      s.label.toLowerCase() === l ||
-      l.includes(s.label.toLowerCase()) ||
-      s.label.toLowerCase().includes(l)
-  );
-  if (svc) return svc.id;
-  if (/user/i.test(label)) return "user";
-  if (/frontend/i.test(label)) return "frontend";
-  if (/api/i.test(label)) return "api";
-  if (/database|data/i.test(label)) return "database";
-  if (/ai|openai|pinecone/i.test(label)) return "ai-openai";
-  return `m-${label.toLowerCase().replace(/\W+/g, "-").slice(0, 16)}`;
+  if (cluster === "presentation") {
+    if (/next|react|frontend|ui/i.test(text)) picked.push("UI");
+    if (/auth|oauth|session|jwt|github/i.test(text)) picked.push("Auth");
+    if (/dashboard|copilot|panel/i.test(text)) picked.push("Dashboard");
+  }
+  if (cluster === "api") {
+    if (arch?.apiRoutes?.length || /express|api|route/i.test(text)) picked.push("API");
+    if (arch?.services.some((s) => s.type === "backend" || s.type === "api")) picked.push("Services");
+    if (/worker|queue|inngest|job/i.test(text)) picked.push("Workers");
+  }
+  if (cluster === "ai") {
+    if (/openai|@ai-sdk\/openai|embed/i.test(text)) picked.push("OpenAI");
+    if (/anthropic|claude/i.test(text)) picked.push("Claude");
+    if (/embed|vector|semantic|rag/i.test(text)) picked.push("Embeddings");
+  }
+  if (cluster === "data") {
+    if (/postgres|supabase|prisma|mysql/i.test(text)) picked.push("PostgreSQL");
+    if (/pinecone|vector|pgvector/i.test(text)) picked.push("Vector Store");
+    if (/storage|s3|blob|repo json/i.test(text)) picked.push("File Storage");
+  }
+  if (cluster === "platform") {
+    if (/github\/workflows|ci\/cd|actions/i.test(text)) picked.push("CI/CD");
+    if (/opentelemetry|grafana|telemetry/i.test(text)) picked.push("Telemetry");
+    if (/vercel|render|railway|docker/i.test(text)) picked.push("Hosting");
+  }
+
+  const unique = [...new Set(picked.length ? picked : defaults.slice(0, 2))];
+  return unique.slice(0, 4);
 }
 
 export function buildDependencyGraph(repo: RepoKnowledge): DependencyGraph {
@@ -105,63 +97,93 @@ export function buildDependencyGraph(repo: RepoKnowledge): DependencyGraph {
   const nodes: DepNode[] = [];
   const edges: DepEdge[] = [];
   const seen = new Set<string>();
+  const activeClusters = new Set<string>();
 
-  const add = (id: string, label: string, meta?: string, type?: string) => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    const cluster = clusterFor(label, type);
-    nodes.push({ id, label, cluster, icon: iconFor(cluster, label), meta });
+  const add = (node: DepNode) => {
+    if (seen.has(node.id)) return;
+    seen.add(node.id);
+    nodes.push(node);
+    activeClusters.add(node.cluster);
   };
 
   for (const svc of arch?.services ?? []) {
-    add(svc.id, svc.label, svc.paths[0], svc.type);
+    const cluster =
+      svc.type === "frontend"
+        ? "presentation"
+        : svc.type === "database"
+          ? "data"
+          : svc.type === "worker"
+            ? "ai"
+            : svc.type === "infra"
+              ? "platform"
+              : "api";
+    activeClusters.add(cluster);
   }
 
-  if (/openai|@ai-sdk/i.test(text) && !seen.has("ai-openai")) {
-    add("ai-openai", "OpenAI", "detected in repo");
+  if (/openai|anthropic|embed|llm|rag/i.test(text)) activeClusters.add("ai");
+  if (/postgres|supabase|prisma|storage|data/i.test(text)) activeClusters.add("data");
+  if (stack.hasCi || /telemetry|grafana/i.test(text)) activeClusters.add("platform");
+  if (arch?.services.some((s) => s.type === "frontend") || /next|frontend/i.test(text)) {
+    activeClusters.add("presentation");
   }
-  if (/pinecone/i.test(text) && !seen.has("ai-pinecone")) {
-    add("ai-pinecone", "Pinecone", "vector store");
+  if (arch?.apiRoutes?.length || /express|backend|api/i.test(text)) activeClusters.add("api");
+
+  if (!activeClusters.size) activeClusters.add("api");
+
+  for (const clusterId of activeClusters) {
+    const groupId = `group-${clusterId}`;
+    add({
+      id: groupId,
+      label: CLUSTER_TITLES[clusterId] ?? clusterId,
+      cluster: clusterId,
+      icon: iconFor(clusterId, CLUSTER_TITLES[clusterId] ?? ""),
+      meta: "cluster",
+    });
+
+    for (const item of pickGroupItems(clusterId, text, arch)) {
+      const childId = `${clusterId}-${item.toLowerCase().replace(/\W+/g, "-")}`;
+      add({
+        id: childId,
+        label: item,
+        cluster: clusterId,
+        parentId: groupId,
+        icon: iconFor(clusterId, item),
+      });
+    }
   }
 
-  const m = parseMermaid(repo.architectureMermaid ?? "");
-  const mermaidIdMap = new Map<string, string>();
-  for (const n of m.nodes) {
-    const id = labelToId(n.label, arch) ?? `m-${n.id}`;
-    mermaidIdMap.set(n.id, id);
-    if (!seen.has(id)) add(id, n.label);
-  }
-  for (const e of m.edges) {
-    const from = mermaidIdMap.get(e.from) ?? e.from;
-    const to = mermaidIdMap.get(e.to) ?? e.to;
+  const clusterOrder = ["presentation", "api", "ai", "data", "platform"];
+  const ordered = clusterOrder.filter((c) => activeClusters.has(c));
+  for (let i = 0; i < ordered.length - 1; i++) {
+    const from = `group-${ordered[i]}`;
+    const to = `group-${ordered[i + 1]}`;
     if (seen.has(from) && seen.has(to)) {
-      edges.push({ from, to, kind: "flow", animated: true });
+      edges.push({ from, to, kind: "depends", animated: true });
     }
   }
 
-  for (const r of (arch?.apiRoutes ?? []).slice(0, 6)) {
-    const id = `route-${r.path.replace(/\W+/g, "-").slice(0, 18)}`;
-    add(id, `${r.method} ${r.path}`, r.file);
-    if (seen.has("api")) edges.push({ from: "api", to: id, kind: "http", animated: true });
+  if (activeClusters.has("presentation") && activeClusters.has("api")) {
+    edges.push({
+      from: `group-presentation`,
+      to: `group-api`,
+      kind: "HTTP",
+      animated: true,
+    });
+  }
+  if (activeClusters.has("api") && activeClusters.has("ai")) {
+    edges.push({ from: `group-api`, to: `group-ai`, kind: "inference", animated: true });
+  }
+  if (activeClusters.has("api") && activeClusters.has("data")) {
+    edges.push({ from: `group-api`, to: `group-data`, kind: "persist", animated: true });
   }
 
-  for (const d of arch?.dependencies ?? []) {
-    if (seen.has(d.from) && seen.has(d.to)) {
-      edges.push({ from: d.from, to: d.to, kind: d.kind, animated: true });
-    }
-  }
+  const clusters = clusterOrder
+    .filter((id) => activeClusters.has(id))
+    .map((id) => ({ id, title: CLUSTER_TITLES[id] ?? id }));
 
-  if (stack.hasCi) add("ci", "CI/CD", ".github/workflows");
-  if (/opentelemetry|@opentelemetry/i.test(text)) add("otel", "OpenTelemetry");
-
-  const used = new Set(nodes.map((n) => n.cluster));
-  const clusters = Object.keys(CLUSTER_TITLES)
-    .filter((id) => used.has(id))
-    .map((id) => ({ id, title: CLUSTER_TITLES[id] }));
-
-  const uniq = [...new Map(edges.map((e) => [`${e.from}-${e.to}`, e])).values()].filter(
-    (e) => seen.has(e.from) && seen.has(e.to)
-  );
-
-  return { clusters, nodes, edges: uniq };
+  return {
+    clusters,
+    nodes,
+    edges: [...new Map(edges.map((e) => [`${e.from}-${e.to}`, e])).values()],
+  };
 }

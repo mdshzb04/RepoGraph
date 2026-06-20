@@ -18,6 +18,7 @@ export type GenerateTextResult = {
   inputTokens: number;
   outputTokens: number;
   model: string;
+  provider?: "anthropic" | "openai";
 };
 
 export type RepoAiInsights = {
@@ -25,6 +26,10 @@ export type RepoAiInsights = {
   workflowMermaid: string;
   dependencyAnalysis: string;
   generatedAt: string;
+  indexedAt: string;
+  architectureHash: string;
+  reasoningProvider?: "anthropic" | "openai";
+  reasoningModel?: string;
 };
 
 export class AIProviderError extends Error {

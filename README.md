@@ -69,7 +69,7 @@ npm run dev
 3. Start: `npm start` → `node dist/index.js`  
    On Render you can use root scripts `render:backend:build` and `render:backend:start`.
 
-Indexed repositories are stored on the API filesystem at `backend/data/repos/` unless you wire Supabase/pgvector (`backend/supabase/migrations/`).
+Indexed repositories, embeddings, and index jobs are stored in **Neon PostgreSQL** via Prisma (`backend/prisma/schema.prisma`). Set `DATABASE_URL` in `backend/.env`. Legacy JSON under `backend/data/repos/` can be imported with `npm run db:migrate-json --prefix backend`.
 
 ## Grafana Cloud (optional)
 

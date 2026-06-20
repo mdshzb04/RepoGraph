@@ -53,18 +53,10 @@ export function CopilotShell() {
     e.preventDefault();
     setIndexError(null);
     setIndexing(true);
-    setIndexStep("Cloning repository tree…");
-    const steps = [
-      "Scanning manifests & Dockerfile…",
-      "Generating semantic chunks…",
-      "Building architecture graph…",
-      "Computing health score…",
-    ];
-    let i = 0;
-    const timer = setInterval(() => {
-      setIndexStep(steps[i % steps.length]);
-      i++;
-    }, 2200);
+    setIndexStep("Queuing index job…");
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
 
     try {
       const res = await fetch("/api/repos", {
@@ -73,10 +65,15 @@ export function CopilotShell() {
         body: JSON.stringify({ repo: repoInput.trim() }),
       });
       const data = await parseJsonResponse<{
+        jobId?: string;
         id: string;
         error?: string;
         code?: string;
+        progress?: number;
+        step?: string;
+        status?: string;
       } & RepoMeta>(res);
+
       if (!res.ok) {
         if (data.code === "INTERNAL_SECRET_MISMATCH") {
           throw new Error(
@@ -85,16 +82,52 @@ export function CopilotShell() {
         }
         throw new Error(data.error ?? "Index failed");
       }
+
+      if (!data.jobId) {
+        localStorage.setItem("copilot_repo_id", data.id);
+        setActiveRepo(data);
+        setIndexStep("Index complete");
+        setPanel("chat");
+        return;
+      }
+
       localStorage.setItem("copilot_repo_id", data.id);
-      setActiveRepo(data);
-      setIndexStep("Index complete");
-      setPanel("chat");
+      setIndexStep(data.step ?? "Indexing…");
+
+      for (let attempt = 0; attempt < 180; attempt++) {
+        await sleep(2000);
+        const poll = await fetch(`/api/repos/index/jobs/${data.jobId}`);
+        const job = await parseJsonResponse<
+          RepoMeta & {
+            jobId: string;
+            progress: number;
+            step: string;
+            status: string;
+            error?: string;
+          }
+        >(poll);
+
+        setIndexStep(
+          job.step
+            ? `${job.step}${job.progress != null ? ` (${job.progress}%)` : ""}`
+            : "Indexing…"
+        );
+
+        if (job.status === "completed") {
+          setActiveRepo(job);
+          setIndexStep("Index complete");
+          setPanel("chat");
+          return;
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error ?? "Indexing failed");
+        }
+      }
+
+      throw new Error("Indexing timed out — check backend logs or Inngest dashboard");
     } catch (err) {
-      setIndexError(
-        err instanceof Error ? err.message : "Index failed"
-      );
+      setIndexError(err instanceof Error ? err.message : "Index failed");
     } finally {
-      clearInterval(timer);
       setIndexing(false);
     }
   }

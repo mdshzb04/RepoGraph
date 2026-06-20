@@ -5,6 +5,7 @@ import { GithubApiError } from "./github-response";
 import { chunkFiles } from "./rag";
 import type { ManifestMap } from "./repo-scanner";
 import { saveRepo, type RepoKnowledge } from "./knowledge";
+import { clearRepoAiInsights } from "./ai/insights-service";
 
 function buildManifests(files: { path: string; content: string }[]): ManifestMap {
   const out: ManifestMap = {};
@@ -96,7 +97,7 @@ export async function rebuildArchitectureCache(
       4000
     );
 
-    const updated: RepoKnowledge = {
+    const updated: RepoKnowledge = clearRepoAiInsights({
       ...repo,
       manifests,
       allPaths,
@@ -104,7 +105,7 @@ export async function rebuildArchitectureCache(
       architecture,
       architectureMermaid,
       summary: contaminated ? summary || repo.summary : repo.summary,
-    };
+    });
     await saveRepo(updated);
     return { ok: true, repo: updated, rebuilt: true };
   } catch (err) {

@@ -3,6 +3,7 @@ export type AIConfig = {
   anthropicApiKey?: string;
   embeddingModel: string;
   reasoningModel: string;
+  openaiReasoningModel: string;
 };
 
 export function getAIConfig(): AIConfig {
@@ -21,6 +22,10 @@ export function getAIConfig(): AIConfig {
       process.env.ANTHROPIC_MODEL?.trim() ||
       process.env.CLAUDE_MODEL?.trim() ||
       "claude-sonnet-4-6",
+    openaiReasoningModel:
+      process.env.OPENAI_REASONING_MODEL?.trim() ||
+      process.env.OPENAI_MODEL?.trim() ||
+      "gpt-4.1",
   };
 }
 

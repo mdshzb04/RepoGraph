@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Layers, Map, Network, Workflow } from "lucide-react";
+import { Layers, Map, Network, RefreshCw, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ArchitectureData, RepoMeta } from "./types";
 import { parseJsonResponse } from "@/lib/api";
 import { ArchitectureTopologyMap } from "./architecture-topology";
 import { DependencyExplorer } from "./dependency-explorer";
-import { ArchitectureExcalidrawDiagram, WorkflowExcalidrawDiagram } from "./architecture-excalidraw";
+import { ArchitectureExcalidrawDiagram } from "./architecture-excalidraw";
+import { MermaidDiagram } from "./mermaid-diagram";
 import { SectionHeader } from "./ui/section-header";
 import { PanelScroll } from "./ui/panel-scroll";
 
@@ -55,6 +56,7 @@ export function ArchitecturePanel({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [layer, setLayer] = useState<Layer>("overview");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!repo?.id) {
@@ -64,7 +66,8 @@ export function ArchitecturePanel({
     }
     setLoading(true);
     setLoadError(null);
-    fetch(`/api/repos/${repo.id}/architecture`)
+    const qs = refreshKey > 0 ? "?refresh=1" : "";
+    fetch(`/api/repos/${repo.id}/architecture${qs}`)
       .then(async (r) => {
         const json = await parseJsonResponse<ArchitectureData & { error?: string; code?: string }>(r);
         if (!r.ok) {
@@ -77,7 +80,7 @@ export function ArchitecturePanel({
         setLoadError(err instanceof Error ? err.message : "Architecture unavailable");
       })
       .finally(() => setLoading(false));
-  }, [repo?.id, active]);
+  }, [repo?.id, active, refreshKey]);
 
   if (!repo) {
     return (
@@ -97,11 +100,23 @@ export function ArchitecturePanel({
 
   const routeCount = data?.analysis?.apiRoutes.length ?? 0;
   const serviceCount = data?.analysis?.services.length ?? 0;
+  const workflowMermaid = data?.workflowMermaid ?? data?.claudeWorkflowMermaid ?? "";
 
   return (
     <PanelScroll>
       <div className="mx-auto max-w-6xl space-y-4 p-6">
-        <SectionHeader title="Architecture" description={repo.fullName} />
+        <div className="flex flex-wrap items-start gap-3">
+          <SectionHeader title="Architecture" description={repo.fullName} />
+          <button
+            type="button"
+            onClick={() => setRefreshKey((k) => k + 1)}
+            className="ml-auto flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            title="Regenerate AI insights"
+          >
+            <RefreshCw className="size-3.5" />
+            Refresh AI
+          </button>
+        </div>
 
         {loadError && (
           <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -129,10 +144,11 @@ export function ArchitecturePanel({
         </div>
 
         <p className="text-[10px] text-muted-foreground">
-          Heuristic graph + Claude analysis
+          Static analysis + AI refinement
           {data?.aiInsightsGeneratedAt &&
-            ` · AI insights ${new Date(data.aiInsightsGeneratedAt).toLocaleString()}`}
-          {routeCount > 0 && ` · ${routeCount} routes`}
+            ` · AI ${new Date(data.aiInsightsGeneratedAt).toLocaleString()}`}
+          {data?.aiInsightsProvider && ` · ${data.aiInsightsProvider}`}
+          {routeCount > 0 && ` · ${routeCount} routes detected`}
           {serviceCount > 0 && ` · ${serviceCount} services`}
         </p>
 
@@ -145,18 +161,14 @@ export function ArchitecturePanel({
         {layer === "workflow" && (
           <LayerShell
             title="Workflow diagram"
-            hint={
-              data?.claudeWorkflowMermaid
-                ? "Claude-inferred lifecycle"
-                : "Excalidraw · request lifecycle"
-            }
+            hint="Request lifecycle · interactive Mermaid"
           >
-            {data?.claudeWorkflowMermaid ? (
-              <pre className="max-h-[min(480px,60vh)] overflow-auto rounded-lg border border-border/40 bg-muted/20 p-4 font-mono text-[11px] leading-relaxed text-foreground/90 whitespace-pre-wrap">
-                {data.claudeWorkflowMermaid}
-              </pre>
+            {workflowMermaid ? (
+              <MermaidDiagram chart={workflowMermaid} minHeight={400} />
             ) : (
-              <WorkflowExcalidrawDiagram workflow={data?.workflow ?? null} />
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                No workflow diagram — index repository first.
+              </p>
             )}
           </LayerShell>
         )}
@@ -170,7 +182,7 @@ export function ArchitecturePanel({
         {layer === "dependencies" && (
           <div className="space-y-4">
             {data?.dependencyAnalysis && (
-              <LayerShell title="Claude dependency analysis" hint="deep architecture notes">
+              <LayerShell title="Dependency summary" hint="AI cluster overview">
                 <div className="prose prose-invert max-w-none text-sm text-muted-foreground">
                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
                     {data.dependencyAnalysis}
@@ -178,7 +190,7 @@ export function ArchitecturePanel({
                 </div>
               </LayerShell>
             )}
-            <LayerShell title="Service dependency map" hint="hover for metadata">
+            <LayerShell title="Service dependency map" hint="expand clusters · hover edges">
               <DependencyExplorer graph={data?.dependencyGraph ?? null} />
             </LayerShell>
           </div>

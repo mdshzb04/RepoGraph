@@ -6,9 +6,13 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "prisma generate && tsc --noEmit",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate-json": "tsx scripts/migrate-json-to-neon.ts"
   },
   "engines": {
     "node": ">=20"
@@ -17,7 +21,7 @@
     "@ai-sdk/anthropic": "^3.0.85",
     "@ai-sdk/openai": "^3.0.64",
     "@engintel/telemetry": "1.0.0",
-    "@supabase/supabase-js": "^2.106.0",
+    "@prisma/client": "^6.9.0",
     "ai": "^6.0.184",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -29,6 +33,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.0",
+    "prisma": "^6.9.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }
