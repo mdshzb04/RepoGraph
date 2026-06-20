@@ -66,13 +66,28 @@ export function isEmbeddableGrafanaUrl(url: string | null | undefined): boolean 
   }
 }
 
+function isDirectDashboardUrl(url: URL): boolean {
+  return (
+    url.pathname.startsWith("/d/") ||
+    url.pathname.startsWith("/goto/") ||
+    url.pathname.includes("/public-dashboards/")
+  );
+}
+
 export function buildGrafanaDashboardViewUrl(
   dashboardUrl: string | null | undefined,
   dashboardUid?: string | null
 ): string | null {
   if (!dashboardUrl?.trim()) return null;
-  const host = parseGrafanaHost(dashboardUrl);
-  if (!host) return dashboardUrl;
+  const trimmed = dashboardUrl.trim();
+  try {
+    const u = new URL(trimmed);
+    if (isDirectDashboardUrl(u)) return trimmed;
+  } catch {
+    return trimmed;
+  }
+  const host = parseGrafanaHost(trimmed);
+  if (!host) return trimmed;
   const uid = dashboardUid?.trim() || DEFAULT_UID;
   return `${host}/d/${uid}/${DEFAULT_SLUG}`;
 }

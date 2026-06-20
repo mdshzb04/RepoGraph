@@ -151,9 +151,18 @@ export function resolveDashboardEmbedUrl(options: GrafanaEmbedOptions): string |
 
 export function resolveDashboardViewUrl(dashboardUrl: string | null): string | null {
   if (!dashboardUrl?.trim()) return null;
+  const trimmed = dashboardUrl.trim();
+  try {
+    const u = new URL(trimmed);
+    if (u.pathname.startsWith("/d/") || u.pathname.startsWith("/goto/")) {
+      return trimmed;
+    }
+  } catch {
+    return trimmed;
+  }
   const uid =
     process.env.GRAFANA_CLOUD_DASHBOARD_UID?.trim() ||
     getCachedDashboardUid() ||
     DEFAULT_UID;
-  return buildGrafanaDashboardViewUrl(dashboardUrl, uid) ?? dashboardUrl;
+  return buildGrafanaDashboardViewUrl(trimmed, uid) ?? trimmed;
 }

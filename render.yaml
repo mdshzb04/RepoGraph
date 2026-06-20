@@ -27,5 +27,4 @@ services:
       # OTEL_RESOURCE_ATTRIBUTES=service.namespace=repograph,deployment.environment=production
       # OTEL_TRACES_EXPORTER=otlp
       # OTEL_LOGS_EXPORTER=otlp
-      # OTEL_METRICS_EXPORTER=none
-      # NODE_OPTIONS=--require @opentelemetry/auto-instrumentations-node/register
+      # GRAFANA_CLOUD_DASHBOARD_URL=https://breezysavanna2522.grafana.net/d/...

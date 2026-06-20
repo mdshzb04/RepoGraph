@@ -5,7 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ObservabilityData, RepoMeta, TraceEvent } from "./types";
 import { BackendHealthCard } from "./observability/backend-health-card";
 import { ExecutionFlowCard } from "./observability/execution-flow-card";
-import { BackendMetricsPanel } from "./observability/backend-metrics-panel";
 import { ObservabilityCharts } from "./observability/observability-charts";
 import { GrafanaLink } from "./observability/grafana-link";
 import { TraceStream } from "./observability/trace-stream";
@@ -87,7 +86,6 @@ export function ObservabilityPanel({ repo }: { repo: RepoMeta | null }) {
       <div className="mx-auto max-w-6xl space-y-4 p-6">
         <SectionHeader title="Observability" description={repo.fullName} />
         <GrafanaLink telemetry={data?.telemetry} />
-        {data && <BackendMetricsPanel data={data} />}
         {data && <ObservabilityCharts data={data} />}
         <div className="grid gap-4 lg:grid-cols-2">
           {data?.backendHealth && <BackendHealthCard health={data.backendHealth} />}

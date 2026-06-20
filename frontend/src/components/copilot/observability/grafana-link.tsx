@@ -9,7 +9,7 @@ export function GrafanaLink({ telemetry }: { telemetry?: TelemetryStatusPayload 
   if (!url) {
     return (
       <p className="text-xs text-muted-foreground">
-        Set GRAFANA_CLOUD_DASHBOARD_URL in backend .env to link your dashboard.
+        Set GRAFANA_CLOUD_DASHBOARD_URL on Render (backend) to link your dashboard.
       </p>
     );
   }
@@ -18,7 +18,9 @@ export function GrafanaLink({ telemetry }: { telemetry?: TelemetryStatusPayload 
     <div className="copilot-glass flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3">
       <div className="flex items-center gap-2">
         <LineChart className="size-4 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Full metrics & history in Grafana Cloud</p>
+        <p className="text-sm text-muted-foreground">
+          Platform metrics, latency, AI usage, and indexing — Grafana Cloud
+        </p>
       </div>
       <a
         href={url}
