@@ -10,6 +10,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      # Set in Render dashboard (Environment tab) — required for Traceplane observability:
+      # Set in Render dashboard (Environment tab):
+      # OPENAI_API_KEY — embeddings + indexing
+      # ANTHROPIC_API_KEY — chat, architecture, workflows, explanations
+      # ANTHROPIC_MODEL=claude-sonnet-4-6 (optional; defaults to claude-sonnet-4-6)
       # TRACEPLANE_API_KEY
       # TRACEPLANE_BASE_URL=https://traceplane.shazeb.site/api/v1

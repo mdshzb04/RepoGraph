@@ -20,7 +20,7 @@ export function getAIConfig(): AIConfig {
     reasoningModel:
       process.env.ANTHROPIC_MODEL?.trim() ||
       process.env.CLAUDE_MODEL?.trim() ||
-      "claude-sonnet-4-20250514",
+      "claude-sonnet-4-6",
   };
 }
 
