@@ -1,11 +1,6 @@
 import { randomUUID } from "crypto";
 import { createIndexJob } from "./index-jobs";
 import { createPendingRepoRecord, type IndexPipelineInput } from "./indexer-pipeline";
-import {
-  inngest,
-  INDEX_REPOSITORY_EVENT,
-  isInngestEnabled,
-} from "../inngest/client";
 import { runIndexPipeline } from "./indexer-pipeline";
 import { updateIndexJob } from "./index-jobs";
 
@@ -40,7 +35,7 @@ function repoSummaryPayload(repo: Awaited<ReturnType<typeof runIndexPipeline>>) 
   };
 }
 
-async function runPipelineLocally(input: IndexPipelineInput): Promise<void> {
+async function runPipelineInBackground(input: IndexPipelineInput): Promise<void> {
   try {
     const ready = await runIndexPipeline(input, async (_name, fn) => fn());
     await updateIndexJob(input.jobId, {
@@ -50,7 +45,14 @@ async function runPipelineLocally(input: IndexPipelineInput): Promise<void> {
       result: repoSummaryPayload(ready),
     });
   } catch (err) {
-    console.error("[index] local pipeline failed:", err);
+    const message = err instanceof Error ? err.message : "Indexing failed";
+    console.error("[index] pipeline failed:", err);
+    await updateIndexJob(input.jobId, {
+      status: "failed",
+      progress: 0,
+      step: "Index failed",
+      error: message,
+    });
   }
 }
 
@@ -90,14 +92,7 @@ export async function enqueueIndexRepository(
     indexedByEmail: options?.indexedByEmail ?? null,
   };
 
-  if (isInngestEnabled()) {
-    await inngest.send({
-      name: INDEX_REPOSITORY_EVENT,
-      data: payload,
-    });
-  } else {
-    void runPipelineLocally(payload);
-  }
+  void runPipelineInBackground(payload);
 
   return {
     jobId: job.id,
@@ -105,7 +100,7 @@ export async function enqueueIndexRepository(
     fullName: `${owner}/${repo}`,
     status: "indexing",
     progress: 0,
-    step: isInngestEnabled() ? "Queued in Inngest" : "Starting local index worker",
+    step: "Starting index worker",
     async: true,
   };
 }

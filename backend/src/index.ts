@@ -60,8 +60,6 @@ import {
   exportIndexBaselineToOtel,
   getLiveTelemetrySnapshot,
 } from "@engintel/telemetry";
-import { serve } from "inngest/express";
-import { inngest, inngestFunctions, isInngestEnabled } from "./inngest";
 import { connectDatabase, prisma } from "./lib/db/client";
 
 dotenv.config();
@@ -123,14 +121,6 @@ app.use(
 );
 app.use(express.json({ limit: "4mb" }));
 app.use(telemetryMiddleware());
-
-app.use(
-  "/api/inngest",
-  serve({
-    client: inngest,
-    functions: inngestFunctions,
-  })
-);
 
 function readGithubUserToken(req: express.Request): string | undefined {
   const raw = req.headers["x-github-user-token"];
@@ -519,10 +509,7 @@ app.post("/api/repos/index", async (req, res) => {
       indexedBySub: ctx.userSub ?? null,
       indexedByEmail: ctx.userEmail ?? null,
     });
-    res.status(202).json({
-      ...enqueued,
-      inngest: isInngestEnabled(),
-    });
+    res.status(202).json(enqueued);
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : "Failed to queue index job",
@@ -684,9 +671,6 @@ async function startServer(): Promise<void> {
     );
     console.log(
       `[telemetry] ${status.enabled ? "Grafana Cloud OTLP enabled" : "disabled (set GRAFANA_CLOUD_* to enable)"}`
-    );
-    console.log(
-      `[inngest] ${isInngestEnabled() ? "cloud events enabled" : "local worker fallback (set INNGEST_EVENT_KEY for production)"}`
     );
   });
 

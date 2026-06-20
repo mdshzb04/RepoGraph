@@ -20,4 +20,3 @@ services:
       # GITHUB_TOKEN — required for indexing private repos / rate limits
       # ENGINTEL_INTERNAL_SECRET — must match frontend
       # FRONTEND_URL — e.g. https://your-app.vercel.app
-      # INNGEST_EVENT_KEY / INNGEST_SIGNING_KEY — background indexing

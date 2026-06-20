@@ -94,7 +94,7 @@ export function CopilotShell() {
       localStorage.setItem("copilot_repo_id", data.id);
       setIndexStep(data.step ?? "Indexing…");
 
-      for (let attempt = 0; attempt < 180; attempt++) {
+      for (let attempt = 0; attempt < 450; attempt++) {
         await sleep(2000);
         const poll = await fetch(`/api/repos/index/jobs/${data.jobId}`);
         const job = await parseJsonResponse<
@@ -124,7 +124,9 @@ export function CopilotShell() {
         }
       }
 
-      throw new Error("Indexing timed out — check backend logs or Inngest dashboard");
+      throw new Error(
+        "Indexing timed out — the repo may still be processing. Check backend logs and try again in a minute."
+      );
     } catch (err) {
       setIndexError(err instanceof Error ? err.message : "Index failed");
     } finally {
