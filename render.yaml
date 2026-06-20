@@ -24,7 +24,7 @@ services:
       # OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-REGION.grafana.net/otlp
       # OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic ...
       # OTEL_SERVICE_NAME=repograph-backend
-      # OTEL_RESOURCE_ATTRIBUTES=service.namespace=repograph
+      # OTEL_RESOURCE_ATTRIBUTES=service.namespace=repograph,deployment.environment=production
       # OTEL_TRACES_EXPORTER=otlp
       # OTEL_LOGS_EXPORTER=otlp
       # OTEL_METRICS_EXPORTER=none

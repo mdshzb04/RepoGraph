@@ -5,9 +5,9 @@
   "description": "Express API for the Asset Defense copilot",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch -r @opentelemetry/auto-instrumentations-node/register src/index.ts",
+    "dev": "tsx watch -r ./src/otel-preload.ts src/index.ts",
     "build": "prisma generate && tsc",
-    "start": "node -r @opentelemetry/auto-instrumentations-node/register dist/index.js",
+    "start": "node -r ./dist/otel-preload.js dist/index.js",
     "typecheck": "prisma generate && tsc --noEmit",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
