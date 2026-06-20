@@ -130,6 +130,25 @@ async function fetchFileContent(
   return { path: filePath, content };
 }
 
+async function mapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R | null>
+): Promise<R[]> {
+  const out: R[] = [];
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const i = cursor++;
+      const value = await fn(items[i]!);
+      if (value !== null) out.push(value);
+    }
+  }
+  const workers = Math.min(limit, items.length, 12);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return out;
+}
+
 export async function fetchRepoFiles(
   owner: string,
   repo: string,
@@ -187,13 +206,16 @@ export async function fetchRepoFiles(
 
   const files: RepoFile[] = [];
   const seen = new Set<string>();
-
-  for (const filePath of toFetch) {
-    if (seen.has(filePath)) continue;
+  const paths = toFetch.filter((filePath) => {
+    if (seen.has(filePath)) return false;
     seen.add(filePath);
-    const file = await fetchFileContent(owner, repo, filePath, meta.default_branch, githubUserToken);
-    if (file) files.push(file);
-  }
+    return true;
+  });
+
+  const fetched = await mapConcurrent(paths, 10, (filePath) =>
+    fetchFileContent(owner, repo, filePath, meta.default_branch, githubUserToken)
+  );
+  files.push(...fetched);
 
   if (files.length === 0 && allPaths.length > 0) {
     throw new GithubApiError(

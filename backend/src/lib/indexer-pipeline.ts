@@ -20,6 +20,13 @@ import { aiProvider } from "./ai";
 import { ensureRepoAiInsights } from "./ai/insights-service";
 import { updateIndexJob } from "./index-jobs";
 import {
+  indexEmbedLimit,
+  indexMaxFiles,
+  isFullIndexMode,
+  skipIndexAiInsights,
+  skipIndexLlmSummary,
+} from "./index-config";
+import {
   clearIndexWorkspace,
   loadIndexWorkspace,
   saveIndexWorkspace,
@@ -111,11 +118,11 @@ export async function createPendingRepoRecord(
 }
 
 async function stepCloneRepository(input: IndexPipelineInput): Promise<void> {
-  await setProgress(input.jobId, 10, "Cloning repository from GitHub");
+  await setProgress(input.jobId, 10, "Fetching repository from GitHub");
   const { fullName, defaultBranch, files, allPaths } = await fetchRepoFiles(
     input.owner,
     input.repo,
-    80,
+    indexMaxFiles(),
     input.githubUserToken
   );
   await saveIndexWorkspace({
@@ -144,11 +151,22 @@ async function stepChunkCode(input: IndexPipelineInput): Promise<void> {
 }
 
 async function stepGenerateEmbeddings(input: IndexPipelineInput): Promise<void> {
-  await setProgress(input.jobId, 60, "Generating OpenAI embeddings");
+  const limit = indexEmbedLimit();
+  await setProgress(
+    input.jobId,
+    60,
+    limit < 9999
+      ? `Generating embeddings (top ${limit} chunks)`
+      : "Generating OpenAI embeddings"
+  );
   const ws = (await loadIndexWorkspace(input.repoId))!;
-  if (aiProvider.openai.isConfigured()) {
+  if (aiProvider.openai.isConfigured() && ws.chunks.length) {
     try {
-      ws.chunks = await aiProvider.embedChunks(ws.chunks);
+      const targets =
+        limit >= ws.chunks.length ? ws.chunks : ws.chunks.slice(0, limit);
+      const embedded = await aiProvider.embedChunks(targets);
+      const byId = new Map(embedded.map((c) => [c.id, c]));
+      ws.chunks = ws.chunks.map((c) => byId.get(c.id) ?? c);
     } catch (err) {
       console.warn("[index] embedding step failed:", err);
     }
@@ -185,12 +203,22 @@ async function stepSaveVectors(input: IndexPipelineInput): Promise<void> {
 }
 
 async function stepGenerateSummary(input: IndexPipelineInput): Promise<void> {
-  await setProgress(input.jobId, 80, "Generating Claude repository summary");
+  await setProgress(
+    input.jobId,
+    80,
+    skipIndexLlmSummary() ? "Building repository summary" : "Generating Claude repository summary"
+  );
   const ws = (await loadIndexWorkspace(input.repoId))!;
   const repo = (await getRepo(input.repoId))!;
 
-  const treePreview = ws.files.map((f) => f.path).slice(0, 40).join("\n");
-  const summaryPrompt = `Repository: ${ws.fullName}
+  let summaryPart = `${ws.fullName} is a codebase with ${ws.files.length} indexed source files and ${ws.chunks.length} searchable chunks.`;
+  let llmSummaryUsed = false;
+  let llmTokens = 0;
+  const modelId = aiProvider.claude.modelId();
+
+  if (!skipIndexLlmSummary()) {
+    const treePreview = ws.files.map((f) => f.path).slice(0, 40).join("\n");
+    const summaryPrompt = `Repository: ${ws.fullName}
 Files (${ws.files.length}):
 ${treePreview}
 
@@ -200,13 +228,7 @@ ${ws.chunks
   .map((c) => `[${c.path}]\n${c.content.slice(0, 300)}`)
   .join("\n\n")}`;
 
-  let summaryPart = `${ws.fullName} is a codebase with ${ws.files.length} indexed source files.`;
-  let llmSummaryUsed = false;
-  let llmTokens = 0;
-  const modelId = aiProvider.claude.modelId();
-
-  try {
-    const generateSummary = async () => {
+    try {
       const result = await aiProvider.generateSummary(
         {
           ...repo,
@@ -216,20 +238,23 @@ ${ws.chunks
         } as RepoKnowledge,
         summaryPrompt
       );
-      if (!result) throw new Error("Reasoning provider not configured");
-      return result;
-    };
-
-    const result = await generateSummary();
-
-    summaryPart = result.text || summaryPart;
-    llmSummaryUsed = true;
-    llmTokens = result.inputTokens + result.outputTokens;
-    if (llmTokens > 0) {
-      recordOpenAIUsage(llmTokens, "index_summary", modelId, input.repoId);
+      if (result?.text) {
+        summaryPart = result.text;
+        llmSummaryUsed = true;
+        llmTokens = result.inputTokens + result.outputTokens;
+        if (llmTokens > 0) {
+          recordOpenAIUsage(llmTokens, "index_summary", modelId, input.repoId);
+        }
+      }
+    } catch (err) {
+      console.warn("[index] summary step skipped:", err);
     }
-  } catch (err) {
-    console.warn("[index] summary step skipped:", err);
+  } else {
+    const topPaths = ws.files
+      .slice(0, 8)
+      .map((f) => f.path)
+      .join(", ");
+    if (topPaths) summaryPart += ` Key paths: ${topPaths}.`;
   }
 
   ws.summary = summaryPart.trim().slice(0, 1200);
@@ -240,7 +265,13 @@ ${ws.chunks
 }
 
 async function stepGenerateInsights(input: IndexPipelineInput): Promise<void> {
-  await setProgress(input.jobId, 90, "Generating architecture insights");
+  await setProgress(
+    input.jobId,
+    90,
+    skipIndexAiInsights()
+      ? "Building static architecture map"
+      : "Generating architecture insights"
+  );
   const ws = (await loadIndexWorkspace(input.repoId))!;
   const repo = (await getRepo(input.repoId))!;
   if (!repo) throw new Error("Repository record missing");
@@ -255,8 +286,13 @@ async function stepGenerateInsights(input: IndexPipelineInput): Promise<void> {
     architectureMermaid: mermaid,
     architecture,
   };
-  await saveRepo(partial);
 
+  if (skipIndexAiInsights()) {
+    await saveRepo(partial);
+    return;
+  }
+
+  await saveRepo(partial);
   const withInsights = await ensureRepoAiInsights(partial);
   await saveRepo(withInsights);
 }
@@ -341,7 +377,9 @@ export async function runIndexPipeline(
   await updateIndexJob(input.jobId, {
     status: "running",
     progress: 0,
-    step: "Starting index pipeline",
+    step: isFullIndexMode()
+      ? "Starting full index pipeline"
+      : "Starting fast index (~2 min)",
   });
 
   try {

@@ -13,34 +13,37 @@ export async function replaceRepoChunks(
   await prisma.$transaction(async (tx) => {
     await tx.fileChunk.deleteMany({ where: { repoId } });
 
-    for (const chunk of chunks) {
-      const id = randomUUID();
-      if (chunk.embedding?.length) {
-        await tx.$executeRawUnsafe(
-          `INSERT INTO file_chunks (id, repository_id, chunk_key, path, content, start_line, end_line, embedding)
-           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::vector)`,
-          id,
+    const plain = chunks.filter((c) => !c.embedding?.length);
+    const embedded = chunks.filter((c) => c.embedding?.length);
+
+    for (let i = 0; i < plain.length; i += 100) {
+      const batch = plain.slice(i, i + 100);
+      await tx.fileChunk.createMany({
+        data: batch.map((chunk) => ({
+          id: randomUUID(),
           repoId,
-          chunk.id,
-          chunk.path,
-          chunk.content,
-          chunk.startLine,
-          chunk.endLine,
-          vectorLiteral(chunk.embedding)
-        );
-      } else {
-        await tx.fileChunk.create({
-          data: {
-            id,
-            repoId,
-            chunkKey: chunk.id,
-            path: chunk.path,
-            content: chunk.content,
-            startLine: chunk.startLine,
-            endLine: chunk.endLine,
-          },
-        });
-      }
+          chunkKey: chunk.id,
+          path: chunk.path,
+          content: chunk.content,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+        })),
+      });
+    }
+
+    for (const chunk of embedded) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO file_chunks (id, repository_id, chunk_key, path, content, start_line, end_line, embedding)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::vector)`,
+        randomUUID(),
+        repoId,
+        chunk.id,
+        chunk.path,
+        chunk.content,
+        chunk.startLine,
+        chunk.endLine,
+        vectorLiteral(chunk.embedding!)
+      );
     }
   });
 }

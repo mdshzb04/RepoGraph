@@ -94,9 +94,30 @@ export function CopilotShell() {
       localStorage.setItem("copilot_repo_id", data.id);
       setIndexStep(data.step ?? "Indexing…");
 
-      for (let attempt = 0; attempt < 450; attempt++) {
-        await sleep(2000);
-        const poll = await fetch(`/api/repos/index/jobs/${data.jobId}`);
+      const POLL_MS = 1000;
+      const MAX_WAIT_MS = 130_000;
+      const deadline = Date.now() + MAX_WAIT_MS;
+
+      while (Date.now() < deadline) {
+        await sleep(POLL_MS);
+
+        const [pollRes, repoRes] = await Promise.all([
+          fetch(`/api/repos/index/jobs/${data.jobId}`),
+          fetch(`/api/repos/${data.id}`),
+        ]);
+
+        if (repoRes.ok) {
+          const repo = await parseJsonResponse<RepoMeta>(repoRes);
+          if (repo.status === "ready") {
+            setActiveRepo(repo);
+            setIndexStep("Index complete");
+            setPanel("chat");
+            return;
+          }
+        }
+
+        if (!pollRes.ok) continue;
+
         const job = await parseJsonResponse<
           RepoMeta & {
             jobId: string;
@@ -105,7 +126,7 @@ export function CopilotShell() {
             status: string;
             error?: string;
           }
-        >(poll);
+        >(pollRes);
 
         setIndexStep(
           job.step
@@ -125,7 +146,7 @@ export function CopilotShell() {
       }
 
       throw new Error(
-        "Indexing timed out — the repo may still be processing. Check backend logs and try again in a minute."
+        "Indexing timed out after ~2 minutes. Try a smaller repo or set INDEX_MODE=full on the backend for deep indexing."
       );
     } catch (err) {
       setIndexError(err instanceof Error ? err.message : "Index failed");
