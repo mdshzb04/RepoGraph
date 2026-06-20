@@ -16,7 +16,6 @@ import type { ManifestMap } from "./repo-scanner";
 import { buildMermaidFromArchitecture } from "./architecture-context";
 import { flushTelemetry, recordOpenAIUsage, recordRepoIndex } from "@engintel/telemetry";
 import { pushOtelEvent } from "./telemetry-stream";
-import { isTraceplaneEnabled, recordIndexJobTrace, withTraceplane } from "./traceplane";
 import { aiProvider } from "./ai";
 import { ensureRepoAiInsights } from "./ai/insights-service";
 import { updateIndexJob } from "./index-jobs";
@@ -221,36 +220,7 @@ ${ws.chunks
       return result;
     };
 
-    let result: Awaited<ReturnType<typeof generateSummary>>;
-    if (isTraceplaneEnabled()) {
-      try {
-        result = await withTraceplane(
-          {
-            agent: "repograph-index-llm",
-            model: modelId,
-            provider: "anthropic",
-            framework: "ai-sdk",
-            environment: process.env.NODE_ENV ?? "development",
-            tags: [`repo:${input.repoId}`, ws.fullName],
-          },
-          async (run) => {
-            run.setInput(summaryPrompt);
-            const out = await generateSummary();
-            run.setOutput(out.text);
-            run.llmCall({
-              model: modelId,
-              inputTokens: out.inputTokens,
-              outputTokens: out.outputTokens,
-            });
-            return out;
-          }
-        );
-      } catch {
-        result = await generateSummary();
-      }
-    } else {
-      result = await generateSummary();
-    }
+    const result = await generateSummary();
 
     summaryPart = result.text || summaryPart;
     llmSummaryUsed = true;
@@ -357,16 +327,6 @@ async function stepMarkIndexed(
     },
   });
   await flushTelemetry();
-  await recordIndexJobTrace({
-    fullName: ws.fullName,
-    fileCount: ws.files.length,
-    chunkCount: ws.chunks.length,
-    durationMs: indexingDurationMs,
-    healthScore: healthScore.overall,
-    llmSummaryUsed: ws.llmSummaryUsed ?? false,
-    modelId: ws.modelId ?? aiProvider.claude.modelId(),
-    llmTokens: ws.llmTokens ?? 0,
-  });
 
   await saveRepo(ready);
   await clearIndexWorkspace(input.repoId);

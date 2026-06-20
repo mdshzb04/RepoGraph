@@ -60,19 +60,12 @@ import {
   exportIndexBaselineToOtel,
   getLiveTelemetrySnapshot,
 } from "@engintel/telemetry";
-import {
-  flushTraceRun,
-  initTraceplane,
-  isTraceplaneEnabled,
-  startTraceRun,
-} from "./lib/traceplane";
 import { serve } from "inngest/express";
 import { inngest, inngestFunctions, isInngestEnabled } from "./inngest";
 import { connectDatabase, prisma } from "./lib/db/client";
 
 dotenv.config();
 initTelemetry();
-const traceplaneReady = initTraceplane();
 setTraceRecorder((repoId, kind) => recordTraceEvent(repoId, kind));
 
 async function hydrateTelemetryFromRepos(): Promise<void> {
@@ -669,38 +662,7 @@ app.post("/api/chat", async (req, res) => {
       console.log(`[ai:router] task=repository_chat provider=openai model=${modelId}`);
     }
 
-    const traceRun = traceplaneReady
-      ? startTraceRun({
-          agent: "repograph-chat",
-          model: modelId,
-          provider,
-          framework: "ai-sdk",
-          environment: process.env.NODE_ENV ?? "development",
-          tags: repoId ? [`repo:${repoId}`] : [],
-        })
-      : null;
-    traceRun?.setInput(lastText);
-
-    const llmStarted = Date.now();
     result.pipeUIMessageStreamToResponse(res);
-
-    if (traceRun) {
-      void (async () => {
-        try {
-          const [text, usage] = await Promise.all([result.text, result.usage]);
-          traceRun.setOutput(text);
-          traceRun.llmCall({
-            model: modelId,
-            inputTokens: usage?.inputTokens ?? 0,
-            outputTokens: usage?.outputTokens ?? 0,
-            latencyMs: Date.now() - llmStarted,
-          });
-          await flushTraceRun(traceRun);
-        } catch (traceErr) {
-          await flushTraceRun(traceRun, traceErr);
-        }
-      })();
-    }
   } catch (error) {
     console.error("Chat error:", error);
     res.status(503).json({
@@ -717,7 +679,6 @@ async function startServer(): Promise<void> {
     const status = getStatus();
     const ai = getAIConfig();
     console.log(`Engineering Intelligence API at http://${host}:${port}`);
-    console.log(`[db] Neon PostgreSQL connected`);
     console.log(
       `[ai] openai=${ai.openaiApiKey ? "configured (embeddings)" : "missing"} · anthropic=${ai.anthropicApiKey ? `configured (${ai.reasoningModel})` : "missing"}`
     );
@@ -726,9 +687,6 @@ async function startServer(): Promise<void> {
     );
     console.log(
       `[inngest] ${isInngestEnabled() ? "cloud events enabled" : "local worker fallback (set INNGEST_EVENT_KEY for production)"}`
-    );
-    console.log(
-      `[traceplane] ${isTraceplaneEnabled() ? "enabled" : "disabled (set TRACEPLANE_API_KEY to enable)"}`
     );
   });
 

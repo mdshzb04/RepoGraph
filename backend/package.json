@@ -26,8 +26,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "inngest": "^4.4.0",
-    "traceplane": "file:traceplane-0.2.0.tgz"
+    "inngest": "^4.4.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

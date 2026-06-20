@@ -16,14 +16,42 @@ export function isDatabaseConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL?.trim());
 }
 
-export async function connectDatabase(): Promise<void> {
-  if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is required. Set your Neon PostgreSQL connection string.");
+function databaseHost(): string | null {
+  const raw = process.env.DATABASE_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw.replace(/^postgresql:/, "postgres:")).hostname;
+  } catch {
+    return null;
   }
-  await prisma.$connect();
-  await prisma.$executeRawUnsafe("CREATE EXTENSION IF NOT EXISTS vector");
-  await prisma.$executeRawUnsafe("CREATE EXTENSION IF NOT EXISTS pgcrypto");
-  await prisma.$executeRawUnsafe(`
+}
+
+/** Reject legacy Supabase URLs — production must use Neon. */
+export function validateDatabaseUrl(): void {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is required. Set your Neon PostgreSQL connection string (Render → Environment)."
+    );
+  }
+  const host = databaseHost();
+  if (host?.includes("supabase.co")) {
+    throw new Error(
+      `DATABASE_URL still points to Supabase (${host}). Update Render Environment to your Neon connection string, then redeploy.`
+    );
+  }
+}
+
+export async function connectDatabase(): Promise<void> {
+  validateDatabaseUrl();
+  const host = databaseHost();
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await prisma.$connect();
+      await prisma.$executeRawUnsafe("CREATE EXTENSION IF NOT EXISTS vector");
+      await prisma.$executeRawUnsafe("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+      await prisma.$executeRawUnsafe(`
     CREATE OR REPLACE FUNCTION match_file_chunks(
       query_embedding vector(1536),
       match_threshold float,
@@ -55,4 +83,15 @@ export async function connectDatabase(): Promise<void> {
       LIMIT match_count;
     $$;
   `);
+      console.log(`[db] connected · host=${host ?? "unknown"}`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 3) {
+        console.warn(`[db] connect attempt ${attempt}/3 failed, retrying…`);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+  throw lastErr;
 }

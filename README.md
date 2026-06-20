@@ -64,12 +64,14 @@ npm run dev
 
 ### Backend (Railway / Render)
 
-1. Deploy `backend/` as a Node service.
-2. Set env from `backend/.env.example`: `OPENAI_API_KEY`, `GITHUB_TOKEN`, `CORS_ORIGINS` (your Vercel URL).
+1. Deploy from repo root (see `render.yaml`) or `backend/` as a Node service.
+2. Set env from `backend/.env.example`, especially:
+   - **`DATABASE_URL`** — Neon PostgreSQL pooled connection string (`*.neon.tech`). **Remove any old Supabase URL** from Render → Environment.
+   - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `CORS_ORIGINS` / `FRONTEND_URL`
 3. Start: `npm start` → `node dist/index.js`  
-   On Render you can use root scripts `render:backend:build` and `render:backend:start`.
+   On Render use `render:backend:build` (includes `prisma db push`) and `render:backend:start`.
 
-Indexed repositories, embeddings, and index jobs are stored in **Neon PostgreSQL** via Prisma (`backend/prisma/schema.prisma`). Set `DATABASE_URL` in `backend/.env`. Legacy JSON under `backend/data/repos/` can be imported with `npm run db:migrate-json --prefix backend`.
+Indexed repositories, embeddings, and index jobs are stored in **Neon PostgreSQL** via Prisma (`backend/prisma/schema.prisma`). Set `DATABASE_URL` locally in `backend/.env` and in Render/Railway for production. Legacy JSON under `backend/data/repos/` can be imported with `npm run db:migrate-json --prefix backend`.
 
 ## Grafana Cloud (optional)
 

@@ -5,14 +5,19 @@ services:
     name: engintel-api
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run render:backend:build
+    buildCommand: npm ci && npm run render:backend:build && npm run db:push --prefix backend
     startCommand: npm run render:backend:start
     envVars:
       - key: NODE_VERSION
         value: "20"
+      # REQUIRED — Neon PostgreSQL (not Supabase). Use the pooled connection string.
+      - key: DATABASE_URL
+        sync: false
       # Set in Render dashboard (Environment tab):
       # OPENAI_API_KEY — embeddings + indexing
       # ANTHROPIC_API_KEY — chat, architecture, workflows, explanations
       # ANTHROPIC_MODEL=claude-sonnet-4-6 (optional; defaults to claude-sonnet-4-6)
-      # TRACEPLANE_API_KEY
-      # TRACEPLANE_BASE_URL=https://traceplane.shazeb.site/api/v1
+      # GITHUB_TOKEN — required for indexing private repos / rate limits
+      # ENGINTEL_INTERNAL_SECRET — must match frontend
+      # FRONTEND_URL — e.g. https://your-app.vercel.app
+      # INNGEST_EVENT_KEY / INNGEST_SIGNING_KEY — background indexing
