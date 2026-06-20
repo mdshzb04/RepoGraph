@@ -75,17 +75,22 @@ Indexed repositories, embeddings, and index jobs are stored in **Neon PostgreSQL
 
 ## Grafana Cloud (optional)
 
-Export metrics from the **backend** only via OTLP:
+Export metrics, traces, and logs from the **backend** via OTLP:
 
 ```env
 OTEL_ENABLED=true
-GRAFANA_CLOUD_INSTANCE_ID=
-GRAFANA_CLOUD_API_KEY=
-GRAFANA_CLOUD_OTLP_REGION=prod-us-east-0
-GRAFANA_CLOUD_DASHBOARD_URL=
-OTEL_SERVICE_NAME=engintel-api
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-ap-south-1.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic YOUR_BASE64_CREDENTIALS
+OTEL_SERVICE_NAME=repograph-backend
 OTEL_DEPLOYMENT_ENVIRONMENT=production
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=repograph
+OTEL_TRACES_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=none
 ```
+
+On Render, also set `NODE_OPTIONS=--require @opentelemetry/auto-instrumentations-node/register` or use the backend `start` script (already includes `-r`).
 
 Check: `GET /health` or `GET /api/telemetry/status`.
 

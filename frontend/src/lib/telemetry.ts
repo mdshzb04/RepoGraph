@@ -3,7 +3,12 @@
  * OTLP export runs on the Express backend — no OpenTelemetry SDK on Vercel.
  */
 
-import { resolveDashboardEmbedUrl, resolveDashboardViewUrl } from "@engintel/telemetry/grafana-public";
+import {
+  isOtlpConfigured,
+  parseOtlpHeaders,
+  resolveDashboardEmbedUrl,
+  resolveDashboardViewUrl,
+} from "@engintel/telemetry";
 
 export type TelemetryPublicStatus = {
   enabled: boolean;
@@ -21,16 +26,18 @@ export function initTelemetry(): TelemetryPublicStatus {
 }
 
 export function getStatus(): TelemetryPublicStatus {
-  const instanceId = process.env.GRAFANA_CLOUD_INSTANCE_ID?.trim();
-  const apiKey =
-    process.env.GRAFANA_CLOUD_API_KEY?.trim() ||
-    process.env.GRAFANA_CLOUD_OTLP_TOKEN?.trim();
   const otlp =
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim() ||
     process.env.GRAFANA_CLOUD_OTLP_ENDPOINT?.trim();
+  const headerAuth = Boolean(parseOtlpHeaders().Authorization);
+  const legacyAuth = Boolean(
+    process.env.GRAFANA_CLOUD_INSTANCE_ID?.trim() &&
+      (process.env.GRAFANA_CLOUD_API_KEY?.trim() ||
+        process.env.GRAFANA_CLOUD_OTLP_TOKEN?.trim())
+  );
   const enabled =
     process.env.OTEL_ENABLED === "true" ||
-    Boolean(instanceId && apiKey && otlp);
+    Boolean(otlp && (headerAuth || legacyAuth));
 
   const dashboardUrlRaw =
     process.env.GRAFANA_CLOUD_DASHBOARD_URL?.trim() ||
@@ -53,7 +60,7 @@ export function getStatus(): TelemetryPublicStatus {
   return {
     enabled,
     provider: enabled ? "grafana_cloud" : "none",
-    serviceName: process.env.OTEL_SERVICE_NAME?.trim() || "engintel-web",
+    serviceName: process.env.OTEL_SERVICE_NAME?.trim() || "repograph-web",
     environment:
       process.env.OTEL_DEPLOYMENT_ENVIRONMENT?.trim() ||
       process.env.NODE_ENV ||
@@ -61,7 +68,7 @@ export function getStatus(): TelemetryPublicStatus {
     runtimeMode: "serverless",
     dashboardUrl: dashboardViewUrl,
     dashboardEmbedUrl: embedUrl,
-    otlpConfigured: Boolean(otlp && instanceId && apiKey),
+    otlpConfigured: isOtlpConfigured(),
   };
 }
 

@@ -1,6 +1,9 @@
 export {
   loadTelemetryConfig,
   getTelemetryPublicStatus,
+  parseOtlpHeaders,
+  parseResourceAttributes,
+  isOtlpConfigured,
   type TelemetryConfig,
   type TelemetryPublicStatus,
   type TelemetryRuntimeMode,

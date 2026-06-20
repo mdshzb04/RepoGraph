@@ -670,7 +670,7 @@ async function startServer(): Promise<void> {
       `[ai] openai=${ai.openaiApiKey ? "configured (embeddings)" : "missing"} · anthropic=${ai.anthropicApiKey ? `configured (${ai.reasoningModel})` : "missing"}`
     );
     console.log(
-      `[telemetry] ${status.enabled ? "Grafana Cloud OTLP enabled" : "disabled (set GRAFANA_CLOUD_* to enable)"}`
+      `[telemetry] ${status.enabled ? `Grafana Cloud OTLP enabled (${status.serviceName})` : "disabled (set OTEL_EXPORTER_OTLP_* in env)"}`
     );
   });
 

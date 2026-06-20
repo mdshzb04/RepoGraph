@@ -6,11 +6,18 @@ Lightweight OpenTelemetry metrics for **Grafana Cloud** (OTLP HTTP). Used by the
 
 ```env
 OTEL_ENABLED=true
-GRAFANA_CLOUD_INSTANCE_ID=123456
-GRAFANA_CLOUD_API_KEY=glc_xxx
-GRAFANA_CLOUD_OTLP_REGION=prod-us-east-0
-OTEL_SERVICE_NAME=engintel-api
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-ap-south-1.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic YOUR_BASE64_CREDENTIALS
+OTEL_SERVICE_NAME=repograph-backend
+OTEL_DEPLOYMENT_ENVIRONMENT=production
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=repograph
+OTEL_TRACES_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=none
 ```
+
+Custom app metrics use this package; traces/logs use `@opentelemetry/auto-instrumentations-node` on the backend.
 
 If credentials are missing, all `record*` calls are no-ops.
 

@@ -249,6 +249,7 @@ export function initTelemetry(): TelemetryConfig {
         [ATTR_SERVICE_NAME]: config.serviceName,
         [ATTR_SERVICE_VERSION]: config.serviceVersion,
         [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: config.environment,
+        ...config.resourceAttributes,
       }),
       readers,
     });
